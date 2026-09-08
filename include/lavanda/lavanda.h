@@ -7,6 +7,8 @@
 #include "lavanda/core/sample.h"
 #include "lavanda/core/status.h"
 #include "lavanda/core/time.h"
+#include "lavanda/device/audio_device.h"
+#include "lavanda/device/device_config.h"
 
 namespace lavanda {
 

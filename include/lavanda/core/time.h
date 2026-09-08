@@ -7,7 +7,7 @@ namespace lavanda {
 
 enum class FrameCount : std::uint64_t {};
 
-const std::uint64_t ToInteger(FrameCount count) noexcept {
+constexpr std::uint64_t ToInteger(FrameCount count) noexcept {
   return static_cast<std::uint64_t>(count);
 }
 

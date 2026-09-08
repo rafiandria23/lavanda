@@ -47,7 +47,9 @@ target_include_directories(lavanda
 lavanda_set_project_warnings(lavanda ${LAVANDA_WARNINGS_AS_ERRORS})
 lavanda_enable_sanitizers(lavanda)
 
-if(APPLE)
+option(LAVANDA_BUILD_COREAUDIO_BACKEND "Build the Core Audio backend (macOS only)" OFF)
+
+if(APPLE AND LAVANDA_BUILD_COREAUDIO_BACKEND)
   target_sources(lavanda PRIVATE
     src/lavanda/platform/coreaudio/coreaudio_device.cc
   )
@@ -60,10 +62,8 @@ if(APPLE)
     ${LAVANDA_COREFOUNDATION_FRAMEWORK}
   )
 else()
-  message(STATUS "lavanda: no output backend for this platform in Phase 1 "
-                  "(only macOS/Core Audio is implemented); "
-                  "CreateDefaultOutputDevice() will return kDeviceUnavailable "
-                  "at runtime.")
+  message(STATUS "lavanda: Core Audio backend not built "
+                  "(CreateDefaultOutputDevice() will return kDeviceUnavailable)")
 endif()
 
 if(LAVANDA_BUILD_TESTS)
