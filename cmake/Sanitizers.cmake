@@ -1,0 +1,18 @@
+option(LAVANDA_ENABLE_ASAN "Enable AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
+option(LAVANDA_ENABLE_TSAN "Enable ThreadSanitizer" OFF)
+
+function(lavanda_enable_sanitizers target)
+  if(LAVANDA_ENABLE_ASAN AND LAVANDA_ENABLE_TSAN)
+    message(FATAL_ERROR "lavanda: ASan and TSan cannot both be on")
+  endif()
+
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    if(LAVANDA_ENABLE_ASAN)
+      target_compile_options(${target} PUBLIC -fsanitize=address,undefined -fno-omit-frame-pointer)
+      target_link_options(${target} PUBLIC -fsanitize=address,undefined)
+    elseif(LAVANDA_ENABLE_TSAN)
+      target_compile_options(${target} PUBLIC -fsanitize=thread -fno-omit-frame-pointer)
+      target_link_options(${target} PUBLIC -fsanitize=thread)
+    endif()
+  endif()
+endfunction()

@@ -1,0 +1,14 @@
+Checks: >
+  -*,
+  bugprone-*,
+  cppcoreguidelines-*,
+  google-*,
+  modernize-*,
+  performance-*,
+  readability-*,
+  -modernize-use-trailing-return-type,
+  -google-readability-todo,
+  -cppcoreguidelines-pro-type-reinterpret-cast
+WarningsAsErrors: ""
+HeaderFilterRegex: "(include|src)/lavanda/.*"
+FormatStyle: google
