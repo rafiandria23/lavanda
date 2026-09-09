@@ -1,20 +1,21 @@
 # Lavanda
 
-Lavanda is a C++20 real-time audio engine, built in phases. This is
-**Phase 1: Audio Device Abstraction** -- a platform-independent audio
-device interface, plus a real Core Audio backend for macOS capable of
-opening the system's default output and producing a deterministic test
-tone through it.
+Lavanda is a C++20 real-time audio engine, built in phases. Phase 1
+established a platform-independent audio device interface plus a working
+Core Audio backend for macOS. Phase 2 builds a real-time runtime on top of
+that boundary, letting ordinary application code control audio playback
+safely from outside the audio thread.
 
 ```
 Application -> Lavanda Engine -> DSP/Graph/Runtime -> Audio Device
             Abstraction -> Native Platform Backend -> OS/Hardware
 ```
 
-Phase 1 implements the bottom two layers above (Audio Device Abstraction
-and a Core Audio backend). See
-[`docs/architecture/audio_device.md`](docs/architecture/audio_device.md)
-for the full design, and [`CHANGELOG.md`](CHANGELOG.md) for what shipped.
+See [`docs/architecture/audio_device.md`](docs/architecture/audio_device.md)
+for the Phase 1 device abstraction, and
+[`docs/architecture/realtime_runtime.md`](docs/architecture/realtime_runtime.md)
+for the Phase 2 runtime, and [`CHANGELOG.md`](CHANGELOG.md) for what's
+shipped.
 
 ## Current platform support
 
@@ -25,8 +26,28 @@ for the full design, and [`CHANGELOG.md`](CHANGELOG.md) for what shipped.
 | Linux    | ALSA/PipeWire | Not implemented (future)  |
 
 The library, its core types, and its unit/integration tests build and run
-on any platform with a C++20 compiler; only the Core Audio backend and
-`examples/device_probe` require macOS.
+on any platform with a C++20 compiler; only the Core Audio backend and the
+examples require macOS.
+
+## Real-time runtime (Phase 2)
+
+`AudioRuntime` sits on top of `AudioDevice`, letting application code
+control playback safely from outside the audio thread via a bounded,
+allocation-free command channel:
+
+```cpp
+lavanda::AudioRuntime runtime(std::move(device));
+runtime.Start();
+runtime.Submit({lavanda::CommandType::kSetFrequency, 440.0f});
+runtime.Submit({lavanda::CommandType::kStartTone, 0.0f});
+// ... later ...
+runtime.Shutdown();
+```
+
+See [`docs/architecture/realtime_runtime.md`](docs/architecture/realtime_runtime.md)
+for the full design -- the control/real-time domain split, command flow,
+queue saturation policy, shutdown sequence, and real-time safety
+guarantees. Try it with `examples/runtime_demo`.
 
 ## Build requirements
 
@@ -35,7 +56,7 @@ on any platform with a C++20 compiler; only the Core Audio backend and
   install on macOS; GCC or Clang elsewhere for the platform-independent
   parts)
 - macOS + the Core Audio / AudioToolbox / CoreFoundation system frameworks,
-  to build and run the Core Audio backend and the example
+  to build and run the Core Audio backend and the examples
 
 Lavanda has no third-party dependencies in the library itself. Tests use
 GoogleTest, fetched automatically via CMake's `FetchContent` if no
@@ -48,7 +69,7 @@ fetch).
 
 The Core Audio backend is opt-in via `LAVANDA_BUILD_COREAUDIO_BACKEND`
 (defaults `OFF`, so the library and its platform-independent tests can
-configure and build before the backend exists, or on non-macOS hosts).
+configure and build before the backend existed, or on non-macOS hosts).
 On macOS, enable it explicitly:
 
 ```sh
@@ -75,22 +96,22 @@ Removes `build/` entirely -- useful when switching CMake generators or
 recovering from a broken configure, since it doesn't rely on an already-
 working build directory the way `cmake --build --target clean` does.
 
-### Running the hardware-dependent integration test
+### Running the hardware-dependent integration tests
 
-One integration test exercises the real Core Audio backend end to end
-(open -> start -> stop -> close against actual hardware, twice in a row).
-It's opt-in, since CI runners aren't guaranteed to have an accessible
-audio output device, and because nobody wants audio I/O firing as a side
-effect of an ordinary `ctest` run:
+Two integration tests exercise real hardware end to end -- the Phase 1
+device lifecycle, and the Phase 2 runtime driving playback through
+`Submit()`. Both are opt-in, since CI runners aren't guaranteed to have an
+accessible audio output device, and because nobody wants audio I/O firing
+as a side effect of an ordinary `ctest` run:
 
 ```sh
-LAVANDA_RUN_HARDWARE_TESTS=1 ctest --preset debug -R DefaultOutputDevice
+LAVANDA_RUN_HARDWARE_TESTS=1 ctest --preset debug -R "DefaultOutputDevice|AudioRuntimeIntegration"
 ```
 
-Without that environment variable, the test skips itself rather than
-failing (see `tests/integration/device/default_output_device_test.cc`).
+Without that environment variable, both tests skip themselves rather than
+failing.
 
-## Running the device probe
+## Running the examples
 
 On macOS, after building with the Core Audio backend enabled:
 
@@ -98,28 +119,39 @@ On macOS, after building with the Core Audio backend enabled:
 ./build/debug/examples/device_probe/device_probe
 ```
 
-It opens the default output device, prints the negotiated format, plays a
-quiet 440 Hz test tone for two seconds, then stops and closes cleanly.
+Opens the default output device, prints the negotiated format, plays a
+quiet 440 Hz test tone for two seconds, then stops and closes cleanly --
+exercises `AudioDevice` directly, with no runtime involved.
+
+```sh
+./build/debug/examples/runtime_demo/runtime_demo
+```
+
+Creates an `AudioRuntime`, plays 440 Hz then 880 Hz then a quiet tail, all
+driven through `Submit()` from the control thread, then shuts down
+cleanly -- the Phase 2 demonstration.
 
 ## Project layout
 
 ```
 include/lavanda/     Public API (platform-independent)
-src/lavanda/          Implementation, including the Core Audio backend
-                      under src/lavanda/platform/coreaudio/
-tests/                Unit tests (core types) and integration tests
-                      (device/backend layer)
-examples/device_probe Minimal CLI demo of the public API
+src/lavanda/          Implementation
+  platform/coreaudio/   Core Audio backend (Phase 1)
+  runtime/               Real-time runtime internals (Phase 2)
+tests/                Unit, concurrency, and integration tests
+examples/              device_probe (Phase 1) and runtime_demo (Phase 2)
 docs/architecture/    Design documentation
 ```
 
 ## Current project phase
 
-**Phase 1 of the planned build-out.** Deliberately out of scope for this
-phase: a DSP graph, mixer, resource manager, scheduler, additional
-backends, and anything else from the real-time runtime layer above the
-device abstraction. See
-[`docs/architecture/audio_device.md`](docs/architecture/audio_device.md#what-is-intentionally-deferred-to-phase-2)
+**Phase 2 of the planned build-out** (real-time runtime, built on Phase
+1's device abstraction). Deliberately out of scope for this phase: a
+mixer, voices, an audio asset/resource manager, a DSP graph, filters,
+effects, spatial audio, streaming, MIDI, plugin hosting, offline
+rendering, a sample-accurate scheduler, additional backends, and device
+enumeration. See
+[`docs/architecture/realtime_runtime.md`](docs/architecture/realtime_runtime.md#what-remains-out-of-scope)
 for the full list.
 
 ## License
