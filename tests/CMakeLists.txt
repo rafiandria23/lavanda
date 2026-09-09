@@ -11,6 +11,7 @@ add_executable(lavanda_unit_tests
   unit/core/audio_format_test.cc
   unit/core/audio_buffer_test.cc
   unit/device/device_config_test.cc
+  unit/runtime/audio_clock_test.cc
 )
 target_link_libraries(lavanda_unit_tests PRIVATE
   lavanda::lavanda

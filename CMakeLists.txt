@@ -31,6 +31,10 @@ add_library(lavanda STATIC
   src/lavanda/core/audio_format.cc
   src/lavanda/core/audio_buffer.cc
   src/lavanda/device/audio_device.cc
+  src/lavanda/runtime/audio_clock.cc
+  src/lavanda/runtime/render_state.cc
+  src/lavanda/runtime/command_queue.cc
+  src/lavanda/runtime/audio_runtime.cc
 )
 add_library(lavanda::lavanda ALIAS lavanda)
 
