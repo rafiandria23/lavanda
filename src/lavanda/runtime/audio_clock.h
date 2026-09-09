@@ -20,6 +20,10 @@ class AudioClock {
 
   double sample_rate_hz() const noexcept { return sample_rate_hz_; }
 
+  void SetSampleRate(double sample_rate_hz) noexcept {
+    sample_rate_hz_ = sample_rate_hz;
+  }
+
   double ElapsedSeconds() const noexcept;
 
  private:
