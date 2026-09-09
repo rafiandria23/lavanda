@@ -23,6 +23,8 @@ TEST(AllocationGuardTest, DetectsHeapAllocation) {
 
   values.push_back(1);
 
+  test_support::DoNotOptimizeAway(values.data());
+
   EXPECT_GT(guard.allocation_count(), 0u);
 }
 
@@ -42,11 +44,15 @@ TEST(AllocationGuardTest, StopsCountingAfterGoingOutOfScope) {
 
     tracked.reserve(8);
 
+    test_support::DoNotOptimizeAway(tracked.data());
+
     EXPECT_GT(guard.allocation_count(), 0u);
   }
 
   std::vector<int> untracked;
   untracked.reserve(8);
+
+  test_support::DoNotOptimizeAway(untracked.data());
 
   test_support::AllocationGuard second_guard;
 

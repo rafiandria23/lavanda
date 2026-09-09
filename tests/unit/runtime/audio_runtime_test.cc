@@ -202,5 +202,19 @@ TEST(AudioRuntimeTest, ZeroLengthRenderBlockDoesNotCrash) {
   EXPECT_TRUE(device->PumpRender(empty_buffer.View()));
 }
 
+TEST(AudioRuntimeTest, ShutdownWithPendingCommandsDoesNotCrash) {
+  auto owned_device = std::make_unique<test_support::FakeAudioDevice>();
+  AudioRuntime runtime(std::move(owned_device), /*command_queue_capacity=*/4);
+
+  ASSERT_TRUE(runtime.Start().ok());
+
+  EXPECT_TRUE(runtime.Submit({CommandType::kSetFrequency, 100.0f}).ok());
+  EXPECT_TRUE(runtime.Submit({CommandType::kSetGain, 0.3f}).ok());
+  EXPECT_TRUE(runtime.Submit({CommandType::kStartTone, 0.0f}).ok());
+
+  EXPECT_TRUE(runtime.Shutdown().ok());
+  EXPECT_FALSE(runtime.is_running());
+}
+
 }  // namespace
 }  // namespace lavanda

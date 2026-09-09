@@ -19,6 +19,10 @@ class AllocationGuard {
   std::size_t baseline_count_;
 };
 
+inline void DoNotOptimizeAway(const void* pointer) {
+  asm volatile("" : : "g"(pointer) : "memory");
+}
+
 }  // namespace lavanda::test_support
 
 #endif
