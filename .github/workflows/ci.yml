@@ -10,7 +10,7 @@ jobs:
     name: macOS (Core Audio backend, full test suite)
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Configure (Debug)
         run: cmake --preset debug -DLAVANDA_BUILD_COREAUDIO_BACKEND=ON
@@ -34,7 +34,7 @@ jobs:
     name: Linux (platform-independent core, no backend)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Configure (Debug)
         run: cmake --preset debug
