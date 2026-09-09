@@ -294,6 +294,35 @@ allocations. This is test-only code, linked into `lavanda_unit_tests`
 alone -- never into the `lavanda` library itself, an example, or
 production code of any kind.
 
+**A subtlety worth recording.** At Release optimization levels, the
+compiler is specifically permitted to omit a call to the replaceable
+global `operator new`/`operator delete` entirely if it can prove the
+allocated memory is never observed -- exactly what happens to code as
+simple as `std::vector<int> v; v.push_back(1);` with no later use of `v`.
+This silently broke two of `AllocationGuard`'s own self-tests under
+`--preset release` (they kept *passing*, but for the wrong reason -- no
+allocation was ever made for the guard to catch), while passing correctly
+under Debug, where lower optimization and ASan's own instrumentation both
+suppress the elision. The fix is `test_support::DoNotOptimizeAway()`, a
+small inline-asm compiler barrier (the same technique Google Benchmark's
+`DoNotOptimize` uses) that forces the compiler to treat a pointer as
+observed. The general lesson generalizes beyond this one bug: a
+real-time-safety test suite needs to be run under every optimization
+level it claims to cover, not just Debug -- this was invisible until the
+Phase 2 closing verification pass specifically exercised `--preset
+release`.
+
+**Separately, the full `AudioRuntime`** (not just the isolated
+`CommandQueue` -- see its own concurrency test in
+`tests/concurrency/`) was verified once under ThreadSanitizer against
+real Core Audio hardware, via `examples/runtime_demo`: a genuine control
+thread issuing commands racing against a genuine audio thread rendering,
+instrumented by a tool built specifically to catch data races. Zero races
+were reported across several hundred real render callbacks. This was a
+one-off manual verification (`-DLAVANDA_ENABLE_TSAN=ON`), not part of the
+standard Debug/Release presets or CI -- worth rerunning after any future
+change to `AudioRuntime`'s threading behavior.
+
 ## Known limitations
 
 - **`SetFrequency` applies with no smoothing.** A frequency change takes
