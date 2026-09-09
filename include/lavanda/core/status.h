@@ -15,6 +15,7 @@ enum class ErrorCode {
   kNotOpen,
   kPlatformError,
   kUnsupportedFormat,
+  kQueueFull,
 };
 
 class Status {
