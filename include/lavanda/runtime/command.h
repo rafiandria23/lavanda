@@ -3,6 +3,8 @@
 
 #include <cstdint>
 
+#include "lavanda/runtime/handles.h"
+
 namespace lavanda {
 
 enum class CommandType : std::uint8_t {
@@ -10,11 +12,26 @@ enum class CommandType : std::uint8_t {
   kStopTone,
   kSetFrequency,
   kSetGain,
+
+  kCreateVoice,
+  kStartVoice,
+  kStopVoice,
+  kDestroyVoice,
+  kSetVoiceGain,
+  kSetVoicePan,
+  kSetVoiceFrequency,
+  kSetVoiceBus,
+
+  kCreateBus,
+  kDestroyBus,
+  kSetBusGain,
 };
 
 struct Command {
   CommandType type = CommandType::kStopTone;
   float value = 0.0f;
+  VoiceId voice_id;
+  BusId bus_id;
 };
 
 }  // namespace lavanda

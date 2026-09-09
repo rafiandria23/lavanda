@@ -19,6 +19,8 @@ void RenderState::ApplyCommand(const Command& command) noexcept {
     case CommandType::kSetGain:
       gain_ = command.value;
       break;
+    default:
+      break;
   }
 }
 

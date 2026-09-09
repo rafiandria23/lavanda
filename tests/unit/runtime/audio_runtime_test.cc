@@ -85,7 +85,7 @@ TEST(AudioRuntimeTest, SubmitSucceedsWhenQueueHasRoom) {
   AudioRuntime runtime(std::make_unique<test_support::FakeAudioDevice>());
 
   ASSERT_TRUE(runtime.Start().ok());
-  EXPECT_TRUE(runtime.Submit({CommandType::kStartTone, 0.0f}).ok());
+  EXPECT_TRUE(runtime.Submit({.type = CommandType::kStartTone}).ok());
 }
 
 TEST(AudioRuntimeTest, SubmitFailsWithQueueFullWhenSaturated) {
@@ -93,11 +93,14 @@ TEST(AudioRuntimeTest, SubmitFailsWithQueueFullWhenSaturated) {
                        /*command_queue_capacity=*/2);
 
   ASSERT_TRUE(runtime.Start().ok());
-  EXPECT_TRUE(runtime.Submit({CommandType::kSetFrequency, 440.0f}).ok());
-  EXPECT_TRUE(runtime.Submit({CommandType::kSetFrequency, 880.0f}).ok());
-
-  Status status = runtime.Submit({CommandType::kSetFrequency, 220.0f});
-
+  EXPECT_TRUE(
+      runtime.Submit({.type = CommandType::kSetFrequency, .value = 440.0f})
+          .ok());
+  EXPECT_TRUE(
+      runtime.Submit({.type = CommandType::kSetFrequency, .value = 880.0f})
+          .ok());
+  Status status =
+      runtime.Submit({.type = CommandType::kSetFrequency, .value = 220.0f});
   EXPECT_FALSE(status.ok());
   EXPECT_EQ(status.code(), ErrorCode::kQueueFull);
 }
@@ -130,9 +133,12 @@ TEST(AudioRuntimeTest, CommandsApplyBeforeTheRenderTheyArriveIn) {
 
   ASSERT_TRUE(runtime.Start().ok());
 
-  ASSERT_TRUE(runtime.Submit({CommandType::kStartTone, 0.0f}).ok());
-  ASSERT_TRUE(runtime.Submit({CommandType::kSetFrequency, 880.0f}).ok());
-  ASSERT_TRUE(runtime.Submit({CommandType::kSetGain, 1.0f}).ok());
+  ASSERT_TRUE(runtime.Submit({.type = CommandType::kStartTone}).ok());
+  ASSERT_TRUE(
+      runtime.Submit({.type = CommandType::kSetFrequency, .value = 880.0f})
+          .ok());
+  ASSERT_TRUE(
+      runtime.Submit({.type = CommandType::kSetGain, .value = 1.0f}).ok());
 
   AudioBuffer buffer(64, 1);
 
@@ -153,7 +159,7 @@ TEST(AudioRuntimeTest, StoppedRuntimeRefusesPumpedRender) {
   AudioRuntime runtime(std::move(owned_device));
 
   ASSERT_TRUE(runtime.Start().ok());
-  ASSERT_TRUE(runtime.Submit({CommandType::kStartTone, 0.0f}).ok());
+  ASSERT_TRUE(runtime.Submit({.type = CommandType::kStartTone}).ok());
   ASSERT_TRUE(runtime.Stop().ok());
 
   AudioBuffer buffer(64, 1);
@@ -168,10 +174,16 @@ TEST(AudioRuntimeTest, MultipleCommandsInOneRenderBlockAllApply) {
 
   ASSERT_TRUE(runtime.Start().ok());
 
-  ASSERT_TRUE(runtime.Submit({CommandType::kSetFrequency, 100.0f}).ok());
-  ASSERT_TRUE(runtime.Submit({CommandType::kSetFrequency, 200.0f}).ok());
-  ASSERT_TRUE(runtime.Submit({CommandType::kSetFrequency, 300.0f}).ok());
-  ASSERT_TRUE(runtime.Submit({CommandType::kStartTone, 0.0f}).ok());
+  ASSERT_TRUE(
+      runtime.Submit({.type = CommandType::kSetFrequency, .value = 100.0f})
+          .ok());
+  ASSERT_TRUE(
+      runtime.Submit({.type = CommandType::kSetFrequency, .value = 200.0f})
+          .ok());
+  ASSERT_TRUE(
+      runtime.Submit({.type = CommandType::kSetFrequency, .value = 300.0f})
+          .ok());
+  ASSERT_TRUE(runtime.Submit({.type = CommandType::kStartTone}).ok());
 
   AudioBuffer first(8, 1);
 
@@ -208,9 +220,12 @@ TEST(AudioRuntimeTest, ShutdownWithPendingCommandsDoesNotCrash) {
 
   ASSERT_TRUE(runtime.Start().ok());
 
-  EXPECT_TRUE(runtime.Submit({CommandType::kSetFrequency, 100.0f}).ok());
-  EXPECT_TRUE(runtime.Submit({CommandType::kSetGain, 0.3f}).ok());
-  EXPECT_TRUE(runtime.Submit({CommandType::kStartTone, 0.0f}).ok());
+  EXPECT_TRUE(
+      runtime.Submit({.type = CommandType::kSetFrequency, .value = 100.0f})
+          .ok());
+  EXPECT_TRUE(
+      runtime.Submit({.type = CommandType::kSetGain, .value = 0.3f}).ok());
+  EXPECT_TRUE(runtime.Submit({.type = CommandType::kStartTone}).ok());
 
   EXPECT_TRUE(runtime.Shutdown().ok());
   EXPECT_FALSE(runtime.is_running());

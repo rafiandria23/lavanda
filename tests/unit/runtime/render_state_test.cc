@@ -15,7 +15,7 @@ TEST(RenderStateTest, DefaultsToNotPlaying) {
 
 TEST(RenderStateTest, StartToneSetsPlaying) {
   RenderState state;
-  state.ApplyCommand({CommandType::kStartTone, 0.0f});
+  state.ApplyCommand({.type = CommandType::kStartTone});
 
   EXPECT_TRUE(state.is_playing());
 }
@@ -23,22 +23,22 @@ TEST(RenderStateTest, StartToneSetsPlaying) {
 TEST(RenderStateTest, StopToneClearsPlaying) {
   RenderState state;
 
-  state.ApplyCommand({CommandType::kStartTone, 0.0f});
-  state.ApplyCommand({CommandType::kStopTone, 0.0f});
+  state.ApplyCommand({.type = CommandType::kStartTone});
+  state.ApplyCommand({.type = CommandType::kStopTone});
 
   EXPECT_FALSE(state.is_playing());
 }
 
 TEST(RenderStateTest, SetFrequencyUpdatesFrequency) {
   RenderState state;
-  state.ApplyCommand({CommandType::kSetFrequency, 880.0f});
+  state.ApplyCommand({.type = CommandType::kSetFrequency, .value = 880.0f});
 
   EXPECT_FLOAT_EQ(state.frequency_hz(), 880.0f);
 }
 
 TEST(RenderStateTest, SetGainUpdatesGain) {
   RenderState state;
-  state.ApplyCommand({CommandType::kSetGain, 0.75f});
+  state.ApplyCommand({.type = CommandType::kSetGain, .value = 0.75f});
 
   EXPECT_FLOAT_EQ(state.gain(), 0.75f);
 }
@@ -59,9 +59,9 @@ TEST(RenderStateTest, RendersSilenceWhenNotPlaying) {
 TEST(RenderStateTest, RendersNonSilenceWhenPlaying) {
   RenderState state;
 
-  state.ApplyCommand({CommandType::kStartTone, 0.0f});
-  state.ApplyCommand({CommandType::kSetFrequency, 440.0f});
-  state.ApplyCommand({CommandType::kSetGain, 1.0f});
+  state.ApplyCommand({.type = CommandType::kStartTone});
+  state.ApplyCommand({.type = CommandType::kSetFrequency, .value = 440.0f});
+  state.ApplyCommand({.type = CommandType::kSetGain, .value = 1.0f});
 
   AudioBuffer buffer(64, 1);
   state.Render(buffer.View(), 48000.0);
@@ -78,9 +78,9 @@ TEST(RenderStateTest, RendersNonSilenceWhenPlaying) {
 TEST(RenderStateTest, RespectsGainScaling) {
   RenderState state;
 
-  state.ApplyCommand({CommandType::kStartTone, 0.0f});
-  state.ApplyCommand({CommandType::kSetFrequency, 1000.0f});
-  state.ApplyCommand({CommandType::kSetGain, 0.5f});
+  state.ApplyCommand({.type = CommandType::kStartTone});
+  state.ApplyCommand({.type = CommandType::kSetFrequency, .value = 1000.0f});
+  state.ApplyCommand({.type = CommandType::kSetGain, .value = 0.5f});
 
   AudioBuffer buffer(4, 1);
   state.Render(buffer.View(), 48000.0);
@@ -93,9 +93,9 @@ TEST(RenderStateTest, RespectsGainScaling) {
 TEST(RenderStateTest, WritesIdenticalSampleToAllChannels) {
   RenderState state;
 
-  state.ApplyCommand({CommandType::kStartTone, 0.0f});
-  state.ApplyCommand({CommandType::kSetFrequency, 440.0f});
-  state.ApplyCommand({CommandType::kSetGain, 1.0f});
+  state.ApplyCommand({.type = CommandType::kStartTone});
+  state.ApplyCommand({.type = CommandType::kSetFrequency, .value = 440.0f});
+  state.ApplyCommand({.type = CommandType::kSetGain, .value = 1.0f});
 
   AudioBuffer buffer(4, 2);
   state.Render(buffer.View(), 48000.0);
@@ -108,18 +108,17 @@ TEST(RenderStateTest, WritesIdenticalSampleToAllChannels) {
 TEST(RenderStateTest, PhaseIsContinuousAcrossRenderCalls) {
   RenderState one_shot;
 
-  one_shot.ApplyCommand({CommandType::kStartTone, 0.0f});
-  one_shot.ApplyCommand({CommandType::kSetFrequency, 440.0f});
-  one_shot.ApplyCommand({CommandType::kSetGain, 1.0f});
+  one_shot.ApplyCommand({.type = CommandType::kStartTone});
+  one_shot.ApplyCommand({.type = CommandType::kSetFrequency, .value = 440.0f});
+  one_shot.ApplyCommand({.type = CommandType::kSetGain, .value = 1.0f});
 
   AudioBuffer one_shot_buffer(8, 1);
   one_shot.Render(one_shot_buffer.View(), 48000.0);
 
   RenderState split;
-
-  split.ApplyCommand({CommandType::kStartTone, 0.0f});
-  split.ApplyCommand({CommandType::kSetFrequency, 440.0f});
-  split.ApplyCommand({CommandType::kSetGain, 1.0f});
+  split.ApplyCommand({.type = CommandType::kStartTone});
+  split.ApplyCommand({.type = CommandType::kSetFrequency, .value = 440.0f});
+  split.ApplyCommand({.type = CommandType::kSetGain, .value = 1.0f});
 
   AudioBuffer first_half(4, 1);
   AudioBuffer second_half(4, 1);

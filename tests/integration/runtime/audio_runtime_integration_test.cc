@@ -33,9 +33,12 @@ TEST(AudioRuntimeIntegrationTest, FullLifecycleAgainstRealHardware) {
   ASSERT_TRUE(runtime.Start().ok());
   EXPECT_TRUE(runtime.is_running());
 
-  ASSERT_TRUE(runtime.Submit({CommandType::kSetFrequency, 440.0f}).ok());
-  ASSERT_TRUE(runtime.Submit({CommandType::kSetGain, 0.2f}).ok());
-  ASSERT_TRUE(runtime.Submit({CommandType::kStartTone, 0.0f}).ok());
+  ASSERT_TRUE(
+      runtime.Submit({.type = CommandType::kSetFrequency, .value = 440.0f})
+          .ok());
+  ASSERT_TRUE(
+      runtime.Submit({.type = CommandType::kSetGain, .value = 0.2f}).ok());
+  ASSERT_TRUE(runtime.Submit({.type = CommandType::kStartTone}).ok());
 
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
@@ -44,7 +47,7 @@ TEST(AudioRuntimeIntegrationTest, FullLifecycleAgainstRealHardware) {
   EXPECT_GT(stats.render_count, 0u)
       << "expected at least one real render callback to have fired";
 
-  ASSERT_TRUE(runtime.Submit({CommandType::kStopTone, 0.0f}).ok());
+  ASSERT_TRUE(runtime.Submit({.type = CommandType::kStopTone}).ok());
 
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
 

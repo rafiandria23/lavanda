@@ -24,6 +24,7 @@ add_executable(lavanda_unit_tests
   unit/runtime/allocation_guard_test.cc
   unit/runtime/realtime_safety_test.cc
   unit/runtime/handles_test.cc
+  unit/runtime/command_test.cc
 )
 target_link_libraries(lavanda_unit_tests PRIVATE
   lavanda::lavanda

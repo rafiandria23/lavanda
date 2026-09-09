@@ -16,9 +16,12 @@ TEST(RealtimeSafetyTest, RenderPathPerformsNoHeapAllocation) {
 
   ASSERT_TRUE(runtime.Start().ok());
 
-  ASSERT_TRUE(runtime.Submit({CommandType::kStartTone, 0.0f}).ok());
-  ASSERT_TRUE(runtime.Submit({CommandType::kSetFrequency, 440.0f}).ok());
-  ASSERT_TRUE(runtime.Submit({CommandType::kSetGain, 0.5f}).ok());
+  ASSERT_TRUE(runtime.Submit({.type = CommandType::kStartTone}).ok());
+  ASSERT_TRUE(
+      runtime.Submit({.type = CommandType::kSetFrequency, .value = 440.0f})
+          .ok());
+  ASSERT_TRUE(
+      runtime.Submit({.type = CommandType::kSetGain, .value = 0.5f}).ok());
 
   AudioBuffer buffer(512, 2);
 
@@ -41,9 +44,10 @@ TEST(RealtimeSafetyTest, DrainingManyQueuedCommandsPerformsNoHeapAllocation) {
   ASSERT_TRUE(runtime.Start().ok());
 
   for (int i = 0; i < 20; ++i) {
-    ASSERT_TRUE(
-        runtime.Submit({CommandType::kSetFrequency, static_cast<float>(i)})
-            .ok());
+    ASSERT_TRUE(runtime
+                    .Submit({.type = CommandType::kSetFrequency,
+                             .value = static_cast<float>(i)})
+                    .ok());
   }
 
   AudioBuffer buffer(64, 1);

@@ -54,28 +54,32 @@ int main() {
   using lavanda::Command;
   using lavanda::CommandType;
 
-  submit_or_report({CommandType::kSetGain, 0.2f}, "SetGain(0.2)");
-  submit_or_report({CommandType::kSetFrequency, 440.0f}, "SetFrequency(440)");
-  submit_or_report({CommandType::kStartTone, 0.0f}, "StartTone");
+  submit_or_report({.type = CommandType::kSetGain, .value = 0.2f},
+                   "SetGain(0.2)");
+  submit_or_report({.type = CommandType::kSetFrequency, .value = 440.0f},
+                   "SetFrequency(440)");
+  submit_or_report({.type = CommandType::kStartTone}, "StartTone");
 
   std::printf("runtime_demo: playing 440 Hz for 1.5s...\n");
   std::this_thread::sleep_for(std::chrono::milliseconds(1500));
 
   PrintStats(runtime.stats(), "440Hz");
 
-  submit_or_report({CommandType::kSetFrequency, 880.0f}, "SetFrequency(880)");
+  submit_or_report({.type = CommandType::kSetFrequency, .value = 880.0f},
+                   "SetFrequency(880)");
 
   std::printf("runtime_demo: playing 880 Hz for 1.5s...\n");
   std::this_thread::sleep_for(std::chrono::milliseconds(1500));
 
   PrintStats(runtime.stats(), "880Hz");
 
-  submit_or_report({CommandType::kSetGain, 0.05f}, "SetGain(0.05)");
+  submit_or_report({.type = CommandType::kSetGain, .value = 0.05f},
+                   "SetGain(0.05)");
 
   std::printf("runtime_demo: quiet for 1s...\n");
   std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
-  submit_or_report({CommandType::kStopTone, 0.0f}, "StopTone");
+  submit_or_report({.type = CommandType::kStopTone}, "StopTone");
 
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   PrintStats(runtime.stats(), "stopped");
