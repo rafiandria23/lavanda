@@ -10,6 +10,7 @@
 #include "lavanda/device/audio_device.h"
 #include "lavanda/device/device_config.h"
 #include "lavanda/runtime/command.h"
+#include "lavanda/runtime/runtime_stats.h"
 
 namespace lavanda {
 

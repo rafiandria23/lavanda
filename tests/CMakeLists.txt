@@ -18,6 +18,7 @@ add_executable(lavanda_unit_tests
   unit/runtime/audio_clock_test.cc
   unit/runtime/command_queue_test.cc
   unit/runtime/render_state_test.cc
+  unit/runtime/render_diagnostics_test.cc
 )
 target_link_libraries(lavanda_unit_tests PRIVATE
   lavanda::lavanda
