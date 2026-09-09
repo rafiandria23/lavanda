@@ -6,6 +6,7 @@ find_package(Threads REQUIRED)
 
 add_library(lavanda_test_support STATIC
   test_support/deterministic_signal.cc
+  test_support/allocation_guard.cc
 )
 target_include_directories(lavanda_test_support PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(lavanda_test_support PUBLIC lavanda::lavanda)
@@ -20,6 +21,8 @@ add_executable(lavanda_unit_tests
   unit/runtime/render_state_test.cc
   unit/runtime/render_diagnostics_test.cc
   unit/runtime/audio_runtime_test.cc
+  unit/runtime/allocation_guard_test.cc
+  unit/runtime/realtime_safety_test.cc
 )
 target_link_libraries(lavanda_unit_tests PRIVATE
   lavanda::lavanda
