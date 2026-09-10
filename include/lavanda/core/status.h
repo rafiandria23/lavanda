@@ -16,6 +16,7 @@ enum class ErrorCode {
   kPlatformError,
   kUnsupportedFormat,
   kQueueFull,
+  kResourceExhausted,
 };
 
 class Status {
