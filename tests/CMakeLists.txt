@@ -32,6 +32,11 @@ add_executable(lavanda_unit_tests
   unit/runtime/audio_runtime_mixing_test.cc
   unit/graph/node_id_test.cc
   unit/graph/audio_node_test.cc
+  unit/graph/nodes/oscillator_node_test.cc
+  unit/graph/nodes/gain_node_test.cc
+  unit/graph/nodes/pan_node_test.cc
+  unit/graph/nodes/one_pole_low_pass_node_test.cc
+  unit/graph/nodes/one_pole_high_pass_node_test.cc
 )
 target_link_libraries(lavanda_unit_tests PRIVATE
   lavanda::lavanda

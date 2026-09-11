@@ -40,6 +40,11 @@ add_library(lavanda STATIC
   src/lavanda/runtime/bus_system.cc
   src/lavanda/runtime/mixing.cc
   src/lavanda/runtime/audio_runtime.cc
+  src/lavanda/graph/nodes/oscillator_node.cc
+  src/lavanda/graph/nodes/gain_node.cc
+  src/lavanda/graph/nodes/pan_node.cc
+  src/lavanda/graph/nodes/one_pole_low_pass_node.cc
+  src/lavanda/graph/nodes/one_pole_high_pass_node.cc
 )
 add_library(lavanda::lavanda ALIAS lavanda)
 
