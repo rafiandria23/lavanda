@@ -27,6 +27,7 @@ add_executable(lavanda_unit_tests
   unit/runtime/command_test.cc
   unit/runtime/mixer_math_test.cc
   unit/runtime/voice_pool_test.cc
+  unit/runtime/bus_system_test.cc
 )
 target_link_libraries(lavanda_unit_tests PRIVATE
   lavanda::lavanda

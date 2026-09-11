@@ -32,6 +32,12 @@ AudioBufferView AudioBuffer::View() noexcept {
   return AudioBufferView(storage_.data(), frame_count_, channel_count_);
 }
 
+AudioBufferView AudioBuffer::View(std::uint32_t frame_count) noexcept {
+  const std::uint32_t clamped = std::min(frame_count, frame_count_);
+
+  return AudioBufferView(storage_.data(), clamped, channel_count_);
+}
+
 void AudioBuffer::Clear() noexcept {
   std::fill(storage_.begin(), storage_.end(), Sample{0});
 }

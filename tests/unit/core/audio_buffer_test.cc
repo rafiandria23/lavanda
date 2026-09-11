@@ -62,5 +62,33 @@ TEST(AudioBufferViewTest, DefaultConstructedViewIsEmpty) {
   EXPECT_TRUE(view.empty());
 }
 
+TEST(AudioBufferTest, PartialViewCoversOnlyRequestedPrefix) {
+  AudioBuffer buffer(8, 1);
+
+  for (std::uint32_t f = 0; f < 8; ++f) buffer(f, 0) = static_cast<float>(f);
+
+  AudioBufferView partial = buffer.View(3);
+
+  EXPECT_EQ(partial.frame_count(), 3u);
+
+  for (std::uint32_t f = 0; f < 3; ++f) {
+    EXPECT_FLOAT_EQ(partial(f, 0), static_cast<float>(f));
+  }
+}
+
+TEST(AudioBufferTest, PartialViewSharesStorageWithFullBuffer) {
+  AudioBuffer buffer(4, 1);
+  buffer.View(2)(0, 0) = 9.0f;
+
+  EXPECT_FLOAT_EQ(buffer(0, 0), 9.0f);
+}
+
+TEST(AudioBufferTest, PartialViewRequestLargerThanBufferIsClamped) {
+  AudioBuffer buffer(4, 1);
+  AudioBufferView view = buffer.View(999);
+
+  EXPECT_EQ(view.frame_count(), 4u);
+}
+
 }  // namespace
 }  // namespace lavanda

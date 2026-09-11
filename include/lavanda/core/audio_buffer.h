@@ -50,6 +50,8 @@ class AudioBuffer {
   Sample operator()(std::uint32_t frame, std::uint32_t channel) const noexcept;
 
   AudioBufferView View() noexcept;
+  AudioBufferView View(std::uint32_t frame_count) noexcept;
+
   void Clear() noexcept;
 
  private:
