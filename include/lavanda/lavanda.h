@@ -12,6 +12,8 @@
 #include "lavanda/runtime/audio_runtime.h"
 #include "lavanda/runtime/command.h"
 #include "lavanda/runtime/handles.h"
+#include "lavanda/runtime/mixing.h"
+#include "lavanda/runtime/runtime_config.h"
 #include "lavanda/runtime/runtime_stats.h"
 
 namespace lavanda {

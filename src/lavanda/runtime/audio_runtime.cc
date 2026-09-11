@@ -7,17 +7,25 @@
 #include <utility>
 
 #include "lavanda/runtime/audio_clock.h"
+#include "lavanda/runtime/bus_system.h"
 #include "lavanda/runtime/command_queue.h"
+#include "lavanda/runtime/mixer_math.h"
 #include "lavanda/runtime/render_context.h"
 #include "lavanda/runtime/render_diagnostics.h"
 #include "lavanda/runtime/render_state.h"
+#include "lavanda/runtime/voice_pool.h"
 
 namespace lavanda {
 
 class AudioRuntime::Impl {
  public:
-  Impl(std::unique_ptr<AudioDevice> device, std::size_t command_queue_capacity)
-      : device_(std::move(device)), command_queue_(command_queue_capacity) {}
+  Impl(std::unique_ptr<AudioDevice> device, const RuntimeConfig& config)
+      : device_(std::move(device)),
+        command_queue_(config.command_queue_capacity),
+        voice_pool_(config.max_voices),
+        bus_system_(config.max_user_buses, config.max_frames_per_block),
+        mix_scratch_(static_cast<std::uint32_t>(config.max_frames_per_block),
+                     1) {}
 
   Status Start(const DeviceConfig& config) {
     if (!device_) {
@@ -93,6 +101,12 @@ class AudioRuntime::Impl {
 
   RuntimeStats stats() const noexcept { return diagnostics_.Snapshot(); }
 
+  StatusOr<VoiceId> ReserveVoice() { return voice_pool_.ReserveSlot(); }
+  void ReleaseVoice(VoiceId id) noexcept { voice_pool_.ReleaseSlot(id); }
+
+  StatusOr<BusId> ReserveBus() { return bus_system_.ReserveSlot(); }
+  void ReleaseBus(BusId id) noexcept { bus_system_.ReleaseSlot(id); }
+
  private:
   void Render(AudioBufferView output) noexcept {
     if (!is_active_.load(std::memory_order_acquire)) {
@@ -106,6 +120,8 @@ class AudioRuntime::Impl {
 
     while (command_queue_.TryPop(command)) {
       render_state_.ApplyCommand(command);
+      voice_pool_.ApplyCommand(command);
+      bus_system_.ApplyCommand(command);
     }
 
     RenderContext context;
@@ -118,6 +134,8 @@ class AudioRuntime::Impl {
     context.render_state->Render(context.output, context.sample_rate_hz);
     clock_.Advance(output.frame_count());
 
+    RenderVoicesAndBuses(output);
+
     const auto render_end = std::chrono::steady_clock::now();
     const double duration_seconds =
         std::chrono::duration<double>(render_end - render_start).count();
@@ -126,18 +144,71 @@ class AudioRuntime::Impl {
                               context.sample_rate_hz);
   }
 
+  void RenderVoicesAndBuses(AudioBufferView output) noexcept {
+    if (output.channel_count() != 2) {
+      return;
+    }
+
+    if (output.frame_count() > bus_system_.max_frames_per_block()) {
+      return;
+    }
+
+    bus_system_.ClearActiveAccumulators(output.frame_count());
+
+    AudioBufferView mono_scratch = mix_scratch_.View(output.frame_count());
+    const double sample_rate_hz = device_->format().sample_rate_hz();
+    const std::size_t voice_count = voice_pool_.capacity();
+
+    for (std::size_t i = 0; i < voice_count; ++i) {
+      if (!voice_pool_.is_active(i)) {
+        continue;
+      }
+
+      voice_pool_.RenderVoiceSource(i, mono_scratch, sample_rate_hz);
+
+      StereoGains gains =
+          EqualPowerPan(voice_pool_.pan(i), voice_pool_.gain(i));
+      const std::size_t target_index =
+          bus_system_.ResolveBusIndex(voice_pool_.target_bus(i));
+      AudioBufferView bus_accumulator =
+          bus_system_.MutableAccumulator(target_index, output.frame_count());
+
+      AccumulateMonoToStereo(bus_accumulator, mono_scratch, gains);
+    }
+
+    AudioBufferView master_accumulator =
+        bus_system_.MutableAccumulator(0, output.frame_count());
+    const std::size_t bus_total = bus_system_.total_capacity();
+
+    for (std::size_t b = 1; b < bus_total; ++b) {
+      if (!bus_system_.is_active(b)) {
+        continue;
+      }
+
+      AudioBufferView bus_accumulator =
+          bus_system_.MutableAccumulator(b, output.frame_count());
+
+      AccumulateInto(master_accumulator, bus_accumulator, bus_system_.gain(b));
+    }
+
+    ApplyGain(master_accumulator, bus_system_.gain(0));
+    AccumulateInto(output, master_accumulator, 1.0f);
+  }
+
   std::unique_ptr<AudioDevice> device_;
   CommandQueue command_queue_;
   RenderState render_state_;
   AudioClock clock_;
   RenderDiagnostics diagnostics_;
+  VoicePool voice_pool_;
+  BusSystem bus_system_;
+  AudioBuffer mix_scratch_;  // mono; per-voice raw-source scratch space
   std::atomic<bool> is_active_{false};
 };
 
 AudioRuntime::AudioRuntime(std::unique_ptr<AudioDevice> device,
-                           std::size_t command_queue_capacity)
-    : impl_(std::make_unique<Impl>(std::move(device), command_queue_capacity)) {
-}
+                           RuntimeConfig config)
+    : impl_(std::make_unique<Impl>(std::move(device), config)) {}
 
 AudioRuntime::~AudioRuntime() {
   if (impl_) {
@@ -160,5 +231,53 @@ Status AudioRuntime::Submit(const Command& command) {
 bool AudioRuntime::is_running() const noexcept { return impl_->is_running(); }
 
 RuntimeStats AudioRuntime::stats() const noexcept { return impl_->stats(); }
+
+StatusOr<Voice> AudioRuntime::CreateVoice() {
+  StatusOr<VoiceId> id_or = impl_->ReserveVoice();
+
+  if (!id_or.ok()) {
+    return id_or.status();
+  }
+
+  VoiceId id = id_or.value();
+  Status submit_status =
+      Submit({.type = CommandType::kCreateVoice, .voice_id = id});
+
+  if (!submit_status.ok()) {
+    impl_->ReleaseVoice(id);
+    return submit_status;
+  }
+
+  return Voice(this, id);
+}
+
+StatusOr<Bus> AudioRuntime::CreateBus() {
+  StatusOr<BusId> id_or = impl_->ReserveBus();
+
+  if (!id_or.ok()) {
+    return id_or.status();
+  }
+
+  BusId id = id_or.value();
+  Status submit_status =
+      Submit({.type = CommandType::kCreateBus, .bus_id = id});
+
+  if (!submit_status.ok()) {
+    impl_->ReleaseBus(id);
+    return submit_status;
+  }
+
+  return Bus(this, id);
+}
+
+Bus AudioRuntime::MasterBus() noexcept { return Bus(this, kMasterBusId); }
+
+void AudioRuntime::ReleaseVoiceReservation(VoiceId id) noexcept {
+  impl_->ReleaseVoice(id);
+}
+
+void AudioRuntime::ReleaseBusReservation(BusId id) noexcept {
+  impl_->ReleaseBus(id);
+}
 
 }  // namespace lavanda

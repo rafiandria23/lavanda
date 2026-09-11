@@ -38,6 +38,7 @@ add_library(lavanda STATIC
   src/lavanda/runtime/mixer_math.cc
   src/lavanda/runtime/voice_pool.cc
   src/lavanda/runtime/bus_system.cc
+  src/lavanda/runtime/mixing.cc
   src/lavanda/runtime/audio_runtime.cc
 )
 add_library(lavanda::lavanda ALIAS lavanda)
