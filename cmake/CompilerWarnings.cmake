@@ -9,6 +9,7 @@ function(lavanda_set_project_warnings target treat_as_errors)
       ${clang_warnings}
       -Wmisleading-indentation -Wduplicated-cond -Wduplicated-branches
       -Wlogical-op -Wuseless-cast
+      -Wno-missing-field-initializers
   )
 
   if(treat_as_errors)
