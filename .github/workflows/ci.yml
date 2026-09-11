@@ -8,7 +8,7 @@ on:
 jobs:
   macos:
     name: macOS (Core Audio backend, full test suite)
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
 
