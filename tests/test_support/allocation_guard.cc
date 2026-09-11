@@ -45,3 +45,24 @@ void operator delete(void* ptr) noexcept { std::free(ptr); }
 void operator delete[](void* ptr) noexcept { std::free(ptr); }
 void operator delete(void* ptr, std::size_t) noexcept { std::free(ptr); }
 void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); }
+
+void* operator new(std::size_t size, const std::nothrow_t&) noexcept {
+  void* ptr = std::malloc(size);
+
+  if (g_tracking_active && ptr != nullptr) {
+    ++g_allocation_count;
+  }
+
+  return ptr;
+}
+
+void* operator new[](std::size_t size, const std::nothrow_t&) noexcept {
+  return ::operator new(size, std::nothrow);
+}
+
+void operator delete(void* ptr, const std::nothrow_t&) noexcept {
+  std::free(ptr);
+}
+void operator delete[](void* ptr, const std::nothrow_t&) noexcept {
+  std::free(ptr);
+}
