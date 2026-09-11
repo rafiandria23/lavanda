@@ -1,6 +1,7 @@
 lavanda_provide_googletest()
 
 include_directories(${CMAKE_SOURCE_DIR}/src)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 find_package(Threads REQUIRED)
 
@@ -49,6 +50,7 @@ lavanda_set_project_warnings(lavanda_integration_tests ${LAVANDA_WARNINGS_AS_ERR
 
 add_executable(lavanda_concurrency_tests
   concurrency/command_queue_concurrency_test.cc
+  concurrency/audio_runtime_concurrency_test.cc
 )
 target_link_libraries(lavanda_concurrency_tests PRIVATE
   lavanda::lavanda
