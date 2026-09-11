@@ -231,5 +231,94 @@ TEST(AudioRuntimeMixingTest, ShutdownWhileVoicesActiveDoesNotCrash) {
   EXPECT_FALSE(runtime.is_running());
 }
 
+TEST(AudioRuntimeMixingTest, StatsReflectActiveVoiceAndBusCountsAfterRender) {
+  auto owned_device = std::make_unique<test_support::FakeAudioDevice>();
+  test_support::FakeAudioDevice* device = owned_device.get();
+  AudioRuntime runtime(std::move(owned_device));
+
+  ASSERT_TRUE(runtime.Start().ok());
+
+  StatusOr<Bus> bus_or = runtime.CreateBus();
+
+  ASSERT_TRUE(bus_or.ok());
+
+  StatusOr<Voice> voice_a_or = runtime.CreateVoice();
+
+  ASSERT_TRUE(voice_a_or.ok());
+  ASSERT_TRUE(voice_a_or.value().SetFrequency(440.0f).ok());
+  ASSERT_TRUE(voice_a_or.value().Start().ok());
+
+  StatusOr<Voice> voice_b_or = runtime.CreateVoice();
+
+  ASSERT_TRUE(voice_b_or.ok());
+  ASSERT_TRUE(voice_b_or.value().SetFrequency(220.0f).ok());
+  ASSERT_TRUE(voice_b_or.value().Start().ok());
+
+  AudioBuffer buffer(64, 2);
+
+  ASSERT_TRUE(device->PumpRender(buffer.View()));
+
+  RuntimeStats stats = runtime.stats();
+
+  EXPECT_EQ(stats.active_voice_count, 2u);
+  EXPECT_EQ(stats.active_bus_count, 2u);
+}
+
+TEST(AudioRuntimeMixingTest, StatsCountVoiceCreationFailuresWhenPoolExhausted) {
+  auto owned_device = std::make_unique<test_support::FakeAudioDevice>();
+
+  RuntimeConfig config;
+  config.max_voices = 1;
+
+  AudioRuntime runtime(std::move(owned_device), config);
+
+  ASSERT_TRUE(runtime.Start().ok());
+  ASSERT_TRUE(runtime.CreateVoice().ok());
+
+  StatusOr<Voice> second = runtime.CreateVoice();
+
+  EXPECT_FALSE(second.ok());
+  EXPECT_EQ(second.status().code(), ErrorCode::kResourceExhausted);
+  EXPECT_EQ(runtime.stats().voice_creation_failures, 1u);
+}
+
+TEST(AudioRuntimeMixingTest, StatsCountBusCreationFailuresWhenPoolExhausted) {
+  auto owned_device = std::make_unique<test_support::FakeAudioDevice>();
+
+  RuntimeConfig config;
+  config.max_user_buses = 1;
+
+  AudioRuntime runtime(std::move(owned_device), config);
+
+  ASSERT_TRUE(runtime.Start().ok());
+  ASSERT_TRUE(runtime.CreateBus().ok());
+
+  StatusOr<Bus> second = runtime.CreateBus();
+
+  EXPECT_FALSE(second.ok());
+  EXPECT_EQ(runtime.stats().bus_creation_failures, 1u);
+}
+
+TEST(AudioRuntimeMixingTest, StatsCountCommandFailuresOnQueueSaturation) {
+  RuntimeConfig config;
+  config.command_queue_capacity = 1;
+
+  AudioRuntime runtime(std::make_unique<test_support::FakeAudioDevice>(),
+                       config);
+
+  ASSERT_TRUE(runtime.Start().ok());
+
+  StatusOr<Voice> voice_or = runtime.CreateVoice();
+
+  ASSERT_TRUE(voice_or.ok());
+
+  Status extra =
+      runtime.Submit({.type = CommandType::kSetFrequency, .value = 1.0f});
+
+  EXPECT_FALSE(extra.ok());
+  EXPECT_EQ(extra.code(), ErrorCode::kQueueFull);
+  EXPECT_EQ(runtime.stats().command_failures, 1u);
+}
+
 }  // namespace
 }  // namespace lavanda

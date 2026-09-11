@@ -91,6 +91,7 @@ class AudioRuntime::Impl {
     }
 
     if (!command_queue_.TryPush(command)) {
+      diagnostics_.RecordCommandFailure();
       return Status(ErrorCode::kQueueFull, "command queue is at capacity");
     }
 
@@ -106,6 +107,13 @@ class AudioRuntime::Impl {
 
   StatusOr<BusId> ReserveBus() { return bus_system_.ReserveSlot(); }
   void ReleaseBus(BusId id) noexcept { bus_system_.ReleaseSlot(id); }
+
+  void RecordVoiceCreationFailure() noexcept {
+    diagnostics_.RecordVoiceCreationFailure();
+  }
+  void RecordBusCreationFailure() noexcept {
+    diagnostics_.RecordBusCreationFailure();
+  }
 
  private:
   void Render(AudioBufferView output) noexcept {
@@ -158,11 +166,14 @@ class AudioRuntime::Impl {
     AudioBufferView mono_scratch = mix_scratch_.View(output.frame_count());
     const double sample_rate_hz = device_->format().sample_rate_hz();
     const std::size_t voice_count = voice_pool_.capacity();
+    std::uint32_t active_voice_count = 0;
 
     for (std::size_t i = 0; i < voice_count; ++i) {
       if (!voice_pool_.is_active(i)) {
         continue;
       }
+
+      ++active_voice_count;
 
       voice_pool_.RenderVoiceSource(i, mono_scratch, sample_rate_hz);
 
@@ -179,11 +190,14 @@ class AudioRuntime::Impl {
     AudioBufferView master_accumulator =
         bus_system_.MutableAccumulator(0, output.frame_count());
     const std::size_t bus_total = bus_system_.total_capacity();
+    std::uint32_t active_bus_count = 1;
 
     for (std::size_t b = 1; b < bus_total; ++b) {
       if (!bus_system_.is_active(b)) {
         continue;
       }
+
+      ++active_bus_count;
 
       AudioBufferView bus_accumulator =
           bus_system_.MutableAccumulator(b, output.frame_count());
@@ -193,6 +207,8 @@ class AudioRuntime::Impl {
 
     ApplyGain(master_accumulator, bus_system_.gain(0));
     AccumulateInto(output, master_accumulator, 1.0f);
+
+    diagnostics_.SetActiveCounts(active_voice_count, active_bus_count);
   }
 
   std::unique_ptr<AudioDevice> device_;
@@ -202,7 +218,7 @@ class AudioRuntime::Impl {
   RenderDiagnostics diagnostics_;
   VoicePool voice_pool_;
   BusSystem bus_system_;
-  AudioBuffer mix_scratch_;  // mono; per-voice raw-source scratch space
+  AudioBuffer mix_scratch_;
   std::atomic<bool> is_active_{false};
 };
 
@@ -236,15 +252,17 @@ StatusOr<Voice> AudioRuntime::CreateVoice() {
   StatusOr<VoiceId> id_or = impl_->ReserveVoice();
 
   if (!id_or.ok()) {
+    impl_->RecordVoiceCreationFailure();
     return id_or.status();
   }
-
   VoiceId id = id_or.value();
   Status submit_status =
       Submit({.type = CommandType::kCreateVoice, .voice_id = id});
 
   if (!submit_status.ok()) {
     impl_->ReleaseVoice(id);
+    impl_->RecordVoiceCreationFailure();
+
     return submit_status;
   }
 
@@ -255,6 +273,7 @@ StatusOr<Bus> AudioRuntime::CreateBus() {
   StatusOr<BusId> id_or = impl_->ReserveBus();
 
   if (!id_or.ok()) {
+    impl_->RecordBusCreationFailure();
     return id_or.status();
   }
 
@@ -264,6 +283,8 @@ StatusOr<Bus> AudioRuntime::CreateBus() {
 
   if (!submit_status.ok()) {
     impl_->ReleaseBus(id);
+    impl_->RecordBusCreationFailure();
+
     return submit_status;
   }
 
