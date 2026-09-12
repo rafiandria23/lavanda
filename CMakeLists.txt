@@ -49,6 +49,8 @@ add_library(lavanda STATIC
   src/lavanda/graph/nodes/delay_node.cc
   src/lavanda/graph/nodes/output_node.cc
   src/lavanda/graph/graph.cc
+  src/lavanda/graph/execution_plan.cc
+  src/lavanda/graph/graph_compiler.cc
 )
 add_library(lavanda::lavanda ALIAS lavanda)
 
