@@ -9,6 +9,8 @@
 #include "lavanda/core/time.h"
 #include "lavanda/device/audio_device.h"
 #include "lavanda/device/device_config.h"
+#include "lavanda/graph/graph.h"
+#include "lavanda/graph/graph_config.h"
 #include "lavanda/graph/node.h"
 #include "lavanda/graph/node_id.h"
 #include "lavanda/runtime/audio_runtime.h"

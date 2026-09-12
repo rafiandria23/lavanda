@@ -40,6 +40,7 @@ add_executable(lavanda_unit_tests
   unit/graph/nodes/mixer_node_test.cc
   unit/graph/nodes/delay_node_test.cc
   unit/graph/nodes/output_node_test.cc
+  unit/graph/audio_graph_test.cc
 )
 target_link_libraries(lavanda_unit_tests PRIVATE
   lavanda::lavanda
