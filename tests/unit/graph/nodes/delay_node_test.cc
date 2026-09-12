@@ -166,5 +166,46 @@ TEST(DelayNodeTest, ZeroInputCountProducesSilenceWithoutCrash) {
   }
 }
 
+TEST(DelayNodeTest, ClonePreservesDelayButResetsBufferContents) {
+  DelayNode original(1, 64);
+  original.SetDelayFrames(3);
+
+  AudioBuffer input(6, 1);
+  input(0, 0) = 1.0f;
+
+  AudioBuffer scratch(6, 1);
+  NodeProcessContext advance_context;
+
+  advance_context.inputs[0] = input.View();
+  advance_context.input_count = 1;
+  advance_context.output = scratch.View();
+  advance_context.frame_count = 6;
+  advance_context.sample_rate_hz = 48000.0;
+
+  original.Process(advance_context);
+
+  std::unique_ptr<AudioNode> clone = original.Clone();
+  auto* cloned_delay = static_cast<DelayNode*>(clone.get());
+
+  EXPECT_EQ(cloned_delay->delay_frames(), 3u);
+  EXPECT_EQ(cloned_delay->max_delay_frames(), 64u);
+
+  AudioBuffer zero_input(6, 1);
+  AudioBuffer clone_output(6, 1);
+  NodeProcessContext clone_context;
+
+  clone_context.inputs[0] = zero_input.View();
+  clone_context.input_count = 1;
+  clone_context.output = clone_output.View();
+  clone_context.frame_count = 6;
+  clone_context.sample_rate_hz = 48000.0;
+
+  clone->Process(clone_context);
+
+  for (std::uint32_t f = 0; f < 6; ++f) {
+    EXPECT_FLOAT_EQ(clone_output(f, 0), 0.0f);
+  }
+}
+
 }  // namespace
 }  // namespace lavanda

@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <memory>
+
 #include "lavanda/graph/node.h"
 
 namespace lavanda {
@@ -18,6 +20,10 @@ class ConstantTestNode : public AudioNode {
   std::uint32_t input_channel_count() const noexcept override { return 0; }
   std::uint32_t output_channel_count() const noexcept override { return 1; }
   std::uint32_t expected_input_count() const noexcept override { return 0; }
+
+  std::unique_ptr<AudioNode> Clone() const override {
+    return std::make_unique<ConstantTestNode>(value_);
+  }
 
  private:
   float value_;

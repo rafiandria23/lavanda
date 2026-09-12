@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 
 #include "lavanda/core/audio_buffer.h"
 
@@ -31,6 +32,8 @@ class AudioNode {
   virtual std::uint32_t output_channel_count() const noexcept = 0;
 
   virtual std::uint32_t expected_input_count() const noexcept = 0;
+
+  virtual std::unique_ptr<AudioNode> Clone() const = 0;
 };
 
 }  // namespace lavanda

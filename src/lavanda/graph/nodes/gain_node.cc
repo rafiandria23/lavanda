@@ -1,5 +1,7 @@
 #include "lavanda/graph/nodes/gain_node.h"
 
+#include <memory>
+
 namespace lavanda {
 
 void GainNode::Process(NodeProcessContext& context) noexcept {
@@ -15,6 +17,13 @@ void GainNode::Process(NodeProcessContext& context) noexcept {
       context.output(f, c) = input(f, c) * gain_;
     }
   }
+}
+
+std::unique_ptr<AudioNode> GainNode::Clone() const {
+  auto clone = std::make_unique<GainNode>(channel_count_);
+  clone->SetGain(gain_);
+
+  return clone;
 }
 
 }  // namespace lavanda

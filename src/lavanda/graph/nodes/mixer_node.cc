@@ -1,6 +1,7 @@
 #include "lavanda/graph/nodes/mixer_node.h"
 
 #include <algorithm>
+#include <memory>
 
 #include "lavanda/runtime/mixer_math.h"
 
@@ -20,6 +21,10 @@ void MixerNode::Process(NodeProcessContext& context) noexcept {
   for (std::uint32_t i = 0; i < count; ++i) {
     AccumulateInto(context.output, context.inputs[i], 1.0f);
   }
+}
+
+std::unique_ptr<AudioNode> MixerNode::Clone() const {
+  return std::make_unique<MixerNode>(channel_count_, input_count_);
 }
 
 }  // namespace lavanda

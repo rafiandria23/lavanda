@@ -125,5 +125,38 @@ TEST(OscillatorNodeTest, ZeroSampleRateProducesSilenceWithoutCrash) {
   }
 }
 
+TEST(OscillatorNodeTest, ClonePreservesParametersButResetsPhase) {
+  OscillatorNode original;
+
+  original.SetFrequency(880.0f);
+  original.SetGain(0.5f);
+
+  AudioBuffer advance_buffer(100, 1);
+  NodeProcessContext advance_context = MakeMonoContext(advance_buffer, 48000.0);
+
+  original.Process(advance_context);
+
+  std::unique_ptr<AudioNode> clone = original.Clone();
+  auto* cloned_oscillator = static_cast<OscillatorNode*>(clone.get());
+
+  EXPECT_FLOAT_EQ(cloned_oscillator->frequency_hz(), 880.0f);
+  EXPECT_FLOAT_EQ(cloned_oscillator->gain(), 0.5f);
+
+  OscillatorNode fresh;
+
+  fresh.SetFrequency(880.0f);
+  fresh.SetGain(0.5f);
+
+  AudioBuffer clone_output(1, 1);
+  AudioBuffer fresh_output(1, 1);
+  NodeProcessContext clone_context = MakeMonoContext(clone_output, 48000.0);
+  NodeProcessContext fresh_context = MakeMonoContext(fresh_output, 48000.0);
+
+  clone->Process(clone_context);
+  fresh.Process(fresh_context);
+
+  EXPECT_FLOAT_EQ(clone_output(0, 0), fresh_output(0, 0));
+}
+
 }  // namespace
 }  // namespace lavanda

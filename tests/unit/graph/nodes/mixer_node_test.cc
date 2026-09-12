@@ -119,5 +119,13 @@ TEST(MixerNodeTest, ZeroInputCountProducesSilenceWithoutCrash) {
   }
 }
 
+TEST(MixerNodeTest, ClonePreservesChannelAndInputCount) {
+  MixerNode original(2, 3);
+  std::unique_ptr<AudioNode> clone = original.Clone();
+
+  EXPECT_EQ(clone->input_channel_count(), 2u);
+  EXPECT_EQ(clone->expected_input_count(), 3u);
+}
+
 }  // namespace
 }  // namespace lavanda

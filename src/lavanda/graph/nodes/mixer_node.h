@@ -1,6 +1,8 @@
 #ifndef LAVANDA_GRAPH_NODES_MIXER_NODE_H_
 #define LAVANDA_GRAPH_NODES_MIXER_NODE_H_
 
+#include <memory>
+
 #include "lavanda/graph/node.h"
 
 namespace lavanda {
@@ -20,6 +22,8 @@ class MixerNode final : public AudioNode {
   std::uint32_t expected_input_count() const noexcept override {
     return input_count_;
   }
+
+  std::unique_ptr<AudioNode> Clone() const override;
 
  private:
   std::uint32_t channel_count_;

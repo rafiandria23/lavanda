@@ -108,5 +108,16 @@ TEST(GainNodeTest, ZeroInputCountProducesSilenceWithoutCrash) {
   }
 }
 
+TEST(GainNodeTest, ClonePreservesChannelCountAndGain) {
+  GainNode original(2);
+  original.SetGain(0.3f);
+
+  std::unique_ptr<AudioNode> clone = original.Clone();
+  auto* cloned_gain = static_cast<GainNode*>(clone.get());
+
+  EXPECT_EQ(cloned_gain->input_channel_count(), 2u);
+  EXPECT_FLOAT_EQ(cloned_gain->gain(), 0.3f);
+}
+
 }  // namespace
 }  // namespace lavanda

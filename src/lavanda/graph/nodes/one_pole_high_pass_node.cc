@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <numbers>
 
 namespace lavanda {
@@ -36,6 +37,13 @@ void OnePoleHighPassNode::Process(NodeProcessContext& context) noexcept {
     previous_input_[c] = prev_in;
     previous_output_[c] = prev_out;
   }
+}
+
+std::unique_ptr<AudioNode> OnePoleHighPassNode::Clone() const {
+  auto clone = std::make_unique<OnePoleHighPassNode>(channel_count_);
+  clone->SetCutoffHz(cutoff_hz_);
+
+  return clone;
 }
 
 }  // namespace lavanda

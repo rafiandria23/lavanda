@@ -1,6 +1,7 @@
 #include "lavanda/graph/nodes/oscillator_node.h"
 
 #include <cmath>
+#include <memory>
 #include <numbers>
 
 namespace lavanda {
@@ -19,6 +20,15 @@ void OscillatorNode::Process(NodeProcessContext& context) noexcept {
     context.output(f, 0) = static_cast<float>(std::sin(phase_)) * gain_;
     phase_ += phase_increment;
   }
+}
+
+std::unique_ptr<AudioNode> OscillatorNode::Clone() const {
+  auto clone = std::make_unique<OscillatorNode>();
+
+  clone->SetFrequency(frequency_hz_);
+  clone->SetGain(gain_);
+
+  return clone;
 }
 
 }  // namespace lavanda

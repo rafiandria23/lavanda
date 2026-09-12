@@ -168,5 +168,15 @@ TEST(OnePoleHighPassNodeTest, ZeroInputCountProducesSilenceWithoutCrash) {
   }
 }
 
+TEST(OnePoleHighPassNodeTest, ClonePreservesCutoff) {
+  OnePoleHighPassNode original(1);
+  original.SetCutoffHz(300.0f);
+
+  std::unique_ptr<AudioNode> clone = original.Clone();
+  auto* cloned_filter = static_cast<OnePoleHighPassNode*>(clone.get());
+
+  EXPECT_FLOAT_EQ(cloned_filter->cutoff_hz(), 300.0f);
+}
+
 }  // namespace
 }  // namespace lavanda

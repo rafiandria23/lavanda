@@ -140,5 +140,15 @@ TEST(PanNodeTest, ZeroInputCountProducesSilenceWithoutCrash) {
   }
 }
 
+TEST(PanNodeTest, ClonePreservesPan) {
+  PanNode original;
+  original.SetPan(-0.7f);
+
+  std::unique_ptr<AudioNode> clone = original.Clone();
+  auto* cloned_pan = static_cast<PanNode*>(clone.get());
+
+  EXPECT_FLOAT_EQ(cloned_pan->pan(), -0.7f);
+}
+
 }  // namespace
 }  // namespace lavanda

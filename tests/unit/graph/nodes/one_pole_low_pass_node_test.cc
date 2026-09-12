@@ -167,5 +167,46 @@ TEST(OnePoleLowPassNodeTest, ZeroInputCountProducesSilenceWithoutCrash) {
   }
 }
 
+TEST(OnePoleLowPassNodeTest, ClonePreservesCutoffButResetsHistory) {
+  OnePoleLowPassNode original(1);
+  original.SetCutoffHz(500.0f);
+
+  AudioBuffer input(50, 1);
+
+  for (std::uint32_t f = 0; f < 50; ++f) {
+    input(f, 0) = 1.0f;
+  }
+
+  AudioBuffer scratch(50, 1);
+  NodeProcessContext advance_context;
+
+  advance_context.inputs[0] = input.View();
+  advance_context.input_count = 1;
+  advance_context.output = scratch.View();
+  advance_context.frame_count = 50;
+  advance_context.sample_rate_hz = 48000.0;
+
+  original.Process(advance_context);
+
+  std::unique_ptr<AudioNode> clone = original.Clone();
+  auto* cloned_filter = static_cast<OnePoleLowPassNode*>(clone.get());
+
+  EXPECT_FLOAT_EQ(cloned_filter->cutoff_hz(), 500.0f);
+
+  AudioBuffer zero_input(1, 1);
+  AudioBuffer clone_output(1, 1);
+  NodeProcessContext clone_context;
+
+  clone_context.inputs[0] = zero_input.View();
+  clone_context.input_count = 1;
+  clone_context.output = clone_output.View();
+  clone_context.frame_count = 1;
+  clone_context.sample_rate_hz = 48000.0;
+
+  clone->Process(clone_context);
+
+  EXPECT_FLOAT_EQ(clone_output(0, 0), 0.0f);
+}
+
 }  // namespace
 }  // namespace lavanda

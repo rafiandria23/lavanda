@@ -1,5 +1,7 @@
 #include "lavanda/graph/nodes/output_node.h"
 
+#include <memory>
+
 namespace lavanda {
 
 void OutputNode::Process(NodeProcessContext& context) noexcept {
@@ -15,6 +17,10 @@ void OutputNode::Process(NodeProcessContext& context) noexcept {
       context.output(f, c) = input(f, c);
     }
   }
+}
+
+std::unique_ptr<AudioNode> OutputNode::Clone() const {
+  return std::make_unique<OutputNode>(channel_count_);
 }
 
 }  // namespace lavanda

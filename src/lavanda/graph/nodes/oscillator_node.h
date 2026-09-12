@@ -1,6 +1,8 @@
 #ifndef LAVANDA_GRAPH_NODES_OSCILLATOR_NODE_H_
 #define LAVANDA_GRAPH_NODES_OSCILLATOR_NODE_H_
 
+#include <memory>
+
 #include "lavanda/graph/node.h"
 
 namespace lavanda {
@@ -14,6 +16,8 @@ class OscillatorNode final : public AudioNode {
   std::uint32_t input_channel_count() const noexcept override { return 0; }
   std::uint32_t output_channel_count() const noexcept override { return 1; }
   std::uint32_t expected_input_count() const noexcept override { return 0; }
+
+  std::unique_ptr<AudioNode> Clone() const override;
 
   void SetFrequency(float frequency_hz) noexcept {
     frequency_hz_ = frequency_hz;

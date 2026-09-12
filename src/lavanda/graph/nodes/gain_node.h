@@ -1,6 +1,8 @@
 #ifndef LAVANDA_GRAPH_NODES_GAIN_NODE_H_
 #define LAVANDA_GRAPH_NODES_GAIN_NODE_H_
 
+#include <memory>
+
 #include "lavanda/graph/node.h"
 
 namespace lavanda {
@@ -19,6 +21,8 @@ class GainNode final : public AudioNode {
     return channel_count_;
   }
   std::uint32_t expected_input_count() const noexcept override { return 1; }
+
+  std::unique_ptr<AudioNode> Clone() const override;
 
   void SetGain(float gain) noexcept { gain_ = gain; }
   float gain() const noexcept { return gain_; }

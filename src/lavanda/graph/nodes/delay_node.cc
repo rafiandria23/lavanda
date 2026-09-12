@@ -1,6 +1,7 @@
 #include "lavanda/graph/nodes/delay_node.h"
 
 #include <algorithm>
+#include <memory>
 
 namespace lavanda {
 
@@ -42,6 +43,13 @@ void DelayNode::Process(NodeProcessContext& context) noexcept {
   }
 
   write_index_ = write_index;
+}
+
+std::unique_ptr<AudioNode> DelayNode::Clone() const {
+  auto clone = std::make_unique<DelayNode>(channel_count_, max_delay_frames_);
+  clone->SetDelayFrames(delay_frames_);
+
+  return clone;
 }
 
 }  // namespace lavanda

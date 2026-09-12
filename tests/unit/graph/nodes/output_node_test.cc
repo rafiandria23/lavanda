@@ -92,5 +92,12 @@ TEST(OutputNodeTest, ZeroInputCountProducesSilenceWithoutCrash) {
   }
 }
 
+TEST(OutputNodeTest, ClonePreservesChannelCount) {
+  OutputNode original(2);
+  std::unique_ptr<AudioNode> clone = original.Clone();
+
+  EXPECT_EQ(clone->input_channel_count(), 2u);
+}
+
 }  // namespace
 }  // namespace lavanda
