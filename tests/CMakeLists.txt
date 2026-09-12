@@ -37,6 +37,9 @@ add_executable(lavanda_unit_tests
   unit/graph/nodes/pan_node_test.cc
   unit/graph/nodes/one_pole_low_pass_node_test.cc
   unit/graph/nodes/one_pole_high_pass_node_test.cc
+  unit/graph/nodes/mixer_node_test.cc
+  unit/graph/nodes/delay_node_test.cc
+  unit/graph/nodes/output_node_test.cc
 )
 target_link_libraries(lavanda_unit_tests PRIVATE
   lavanda::lavanda
