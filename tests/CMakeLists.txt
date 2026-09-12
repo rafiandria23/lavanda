@@ -42,6 +42,8 @@ add_executable(lavanda_unit_tests
   unit/graph/nodes/output_node_test.cc
   unit/graph/audio_graph_test.cc
   unit/graph/graph_compiler_test.cc
+  unit/graph/graph_plan_store_test.cc
+  unit/graph/graph_executor_test.cc
 )
 target_link_libraries(lavanda_unit_tests PRIVATE
   lavanda::lavanda

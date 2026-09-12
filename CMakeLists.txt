@@ -51,6 +51,8 @@ add_library(lavanda STATIC
   src/lavanda/graph/graph.cc
   src/lavanda/graph/execution_plan.cc
   src/lavanda/graph/graph_compiler.cc
+  src/lavanda/graph/graph_plan_store.cc
+  src/lavanda/graph/graph_executor.cc
 )
 add_library(lavanda::lavanda ALIAS lavanda)
 

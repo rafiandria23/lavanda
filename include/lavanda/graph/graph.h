@@ -24,6 +24,8 @@ class AudioGraph {
 
   AudioGraph(const AudioGraph&) = delete;
   AudioGraph& operator=(const AudioGraph&) = delete;
+  AudioGraph(AudioGraph&&) noexcept = default;
+  AudioGraph& operator=(AudioGraph&&) noexcept = default;
 
   const GraphConfig& config() const noexcept { return config_; }
 
