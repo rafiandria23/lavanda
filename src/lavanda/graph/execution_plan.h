@@ -8,6 +8,7 @@
 
 #include "lavanda/core/audio_buffer.h"
 #include "lavanda/graph/node.h"
+#include "lavanda/graph/node_id.h"
 
 namespace lavanda {
 
@@ -20,7 +21,9 @@ class GraphExecutionPlan {
     std::uint32_t input_count = 0;
   };
 
-  GraphExecutionPlan(std::vector<Step> steps, std::vector<AudioBuffer> buffers,
+  GraphExecutionPlan(std::vector<Step> steps,
+                     std::vector<NodeId> step_source_ids,
+                     std::vector<AudioBuffer> buffers,
                      std::uint32_t output_buffer_index,
                      std::uint32_t output_channel_count,
                      std::uint32_t max_frames_per_block);
@@ -30,9 +33,15 @@ class GraphExecutionPlan {
   GraphExecutionPlan(GraphExecutionPlan&&) = default;
   GraphExecutionPlan& operator=(GraphExecutionPlan&&) = default;
 
+  std::uint32_t FindStepIndexForNode(NodeId id) const noexcept;
+
   const std::vector<Step>& steps() const noexcept { return steps_; }
+  const std::vector<NodeId>& step_source_ids() const noexcept {
+    return step_source_ids_;
+  }
 
   std::vector<AudioBuffer>& buffers() noexcept { return buffers_; }
+
   std::uint32_t output_buffer_index() const noexcept {
     return output_buffer_index_;
   }
@@ -51,7 +60,9 @@ class GraphExecutionPlan {
 
  private:
   std::vector<Step> steps_;
+  std::vector<NodeId> step_source_ids_;
   std::vector<AudioBuffer> buffers_;
+
   std::uint32_t output_buffer_index_;
   std::uint32_t output_channel_count_;
   std::uint32_t max_frames_per_block_;

@@ -27,6 +27,7 @@ class RenderDiagnostics {
 
   void RecordVoiceCreationFailure() noexcept;
   void RecordBusCreationFailure() noexcept;
+  void RecordGraphCompilationFailure() noexcept;
   void RecordCommandFailure() noexcept;
 
   RuntimeStats Snapshot() const noexcept;
@@ -41,6 +42,7 @@ class RenderDiagnostics {
   std::atomic<std::uint32_t> active_bus_count_{0};
   std::atomic<std::uint64_t> voice_creation_failures_{0};
   std::atomic<std::uint64_t> bus_creation_failures_{0};
+  std::atomic<std::uint64_t> graph_compilation_failures_{0};
   std::atomic<std::uint64_t> command_failures_{0};
 };
 

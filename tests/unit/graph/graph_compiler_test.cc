@@ -430,5 +430,44 @@ TEST(GraphCompilerTest,
   }
 }
 
+TEST(GraphCompilerTest, FindStepIndexForNodeLocatesCompiledStep) {
+  AudioGraph graph;
+  StatusOr<NodeId> osc = graph.AddNode(std::make_unique<OscillatorNode>());
+  StatusOr<NodeId> output = graph.AddNode(std::make_unique<OutputNode>(1));
+
+  ASSERT_TRUE(osc.ok() && output.ok());
+  ASSERT_TRUE(graph.Connect(osc.value(), output.value(), 0).ok());
+  ASSERT_TRUE(graph.SetOutput(output.value()).ok());
+
+  StatusOr<GraphExecutionPlan> plan_or = GraphCompiler::Compile(graph, 512);
+
+  ASSERT_TRUE(plan_or.ok());
+
+  GraphExecutionPlan& plan = plan_or.value();
+
+  const std::uint32_t osc_step = plan.FindStepIndexForNode(osc.value());
+
+  ASSERT_LT(osc_step, plan.step_count());
+  EXPECT_NE(dynamic_cast<OscillatorNode*>(plan.steps()[osc_step].node.get()),
+            nullptr);
+}
+
+TEST(GraphCompilerTest, FindStepIndexForNodeReturnsSentinelForUnknownNode) {
+  AudioGraph graph;
+  StatusOr<NodeId> osc = graph.AddNode(std::make_unique<OscillatorNode>());
+
+  ASSERT_TRUE(osc.ok());
+  ASSERT_TRUE(graph.SetOutput(osc.value()).ok());
+
+  StatusOr<GraphExecutionPlan> plan_or = GraphCompiler::Compile(graph, 512);
+
+  ASSERT_TRUE(plan_or.ok()) << plan_or.status().message();
+
+  NodeId unrelated{99, 0};
+
+  EXPECT_EQ(plan_or.value().FindStepIndexForNode(unrelated),
+            std::numeric_limits<std::uint32_t>::max());
+}
+
 }  // namespace
 }  // namespace lavanda

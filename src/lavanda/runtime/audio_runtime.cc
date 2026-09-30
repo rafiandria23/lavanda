@@ -6,6 +6,14 @@
 #include <memory>
 #include <utility>
 
+#include "lavanda/graph/graph_executor.h"
+#include "lavanda/graph/graph_plan_store.h"
+#include "lavanda/graph/nodes/delay_node.h"
+#include "lavanda/graph/nodes/gain_node.h"
+#include "lavanda/graph/nodes/one_pole_high_pass_node.h"
+#include "lavanda/graph/nodes/one_pole_low_pass_node.h"
+#include "lavanda/graph/nodes/oscillator_node.h"
+#include "lavanda/graph/nodes/pan_node.h"
 #include "lavanda/runtime/audio_clock.h"
 #include "lavanda/runtime/bus_system.h"
 #include "lavanda/runtime/command_queue.h"
@@ -17,6 +25,47 @@
 
 namespace lavanda {
 
+namespace {
+
+void ApplyNodeParameterCommand(AudioNode* node, CommandType type,
+                               float value) noexcept {
+  switch (type) {
+    case CommandType::kSetNodeGain:
+      if (auto* gain = dynamic_cast<GainNode*>(node)) {
+        gain->SetGain(value);
+      } else if (auto* osc = dynamic_cast<OscillatorNode*>(node)) {
+        osc->SetGain(value);
+      }
+      break;
+    case CommandType::kSetNodeFrequency:
+      if (auto* osc = dynamic_cast<OscillatorNode*>(node)) {
+        osc->SetFrequency(value);
+      }
+      break;
+    case CommandType::kSetNodeCutoff:
+      if (auto* low_pass = dynamic_cast<OnePoleLowPassNode*>(node)) {
+        low_pass->SetCutoffHz(value);
+      } else if (auto* high_pass = dynamic_cast<OnePoleHighPassNode*>(node)) {
+        high_pass->SetCutoffHz(value);
+      }
+      break;
+    case CommandType::kSetNodePan:
+      if (auto* pan = dynamic_cast<PanNode*>(node)) {
+        pan->SetPan(value);
+      }
+      break;
+    case CommandType::kSetNodeDelayFrames:
+      if (auto* delay = dynamic_cast<DelayNode*>(node)) {
+        delay->SetDelayFrames(static_cast<std::uint32_t>(value));
+      }
+      break;
+    default:
+      break;
+  }
+}
+
+}  // namespace
+
 class AudioRuntime::Impl {
  public:
   Impl(std::unique_ptr<AudioDevice> device, const RuntimeConfig& config)
@@ -25,7 +74,11 @@ class AudioRuntime::Impl {
         voice_pool_(config.max_voices),
         bus_system_(config.max_user_buses, config.max_frames_per_block),
         mix_scratch_(static_cast<std::uint32_t>(config.max_frames_per_block),
-                     1) {}
+                     1),
+        graph_(config.graph_config),
+        graph_plan_store_(config.max_graph_plans),
+        max_frames_per_block_(
+            static_cast<std::uint32_t>(config.max_frames_per_block)) {}
 
   Status Start(const DeviceConfig& config) {
     if (!device_) {
@@ -99,20 +152,34 @@ class AudioRuntime::Impl {
   }
 
   bool is_running() const noexcept { return device_ && device_->is_running(); }
-
   RuntimeStats stats() const noexcept { return diagnostics_.Snapshot(); }
 
   StatusOr<VoiceId> ReserveVoice() { return voice_pool_.ReserveSlot(); }
   void ReleaseVoice(VoiceId id) noexcept { voice_pool_.ReleaseSlot(id); }
-
   StatusOr<BusId> ReserveBus() { return bus_system_.ReserveSlot(); }
   void ReleaseBus(BusId id) noexcept { bus_system_.ReleaseSlot(id); }
-
   void RecordVoiceCreationFailure() noexcept {
     diagnostics_.RecordVoiceCreationFailure();
   }
   void RecordBusCreationFailure() noexcept {
     diagnostics_.RecordBusCreationFailure();
+  }
+
+  AudioGraph& graph() noexcept { return graph_; }
+
+  StatusOr<GraphPlanHandle> CompileAndStageGraph() {
+    StatusOr<GraphPlanHandle> handle_or =
+        graph_plan_store_.BuildAndStage(graph_, max_frames_per_block_);
+
+    if (handle_or.ok()) {
+      diagnostics_.RecordGraphCompilationFailure();
+    }
+
+    return handle_or;
+  }
+
+  void ReleaseStagedGraphPlan(GraphPlanHandle handle) noexcept {
+    graph_plan_store_.ReleaseStagedPlan(handle);
   }
 
  private:
@@ -130,6 +197,23 @@ class AudioRuntime::Impl {
       render_state_.ApplyCommand(command);
       voice_pool_.ApplyCommand(command);
       bus_system_.ApplyCommand(command);
+
+      if (command.type == CommandType::kActivateGraphPlan) {
+        graph_plan_store_.TryActivate(command.plan_handle);
+      } else {
+        GraphExecutionPlan* active_plan = graph_plan_store_.ActivePlan();
+
+        if (active_plan != nullptr) {
+          const std::uint32_t step_index =
+              active_plan->FindStepIndexForNode(command.node_id);
+
+          if (step_index < active_plan->step_count()) {
+            ApplyNodeParameterCommand(
+                active_plan->steps()[step_index].node.get(), command.type,
+                command.value);
+          }
+        }
+      }
     }
 
     RenderContext context;
@@ -143,6 +227,13 @@ class AudioRuntime::Impl {
     clock_.Advance(output.frame_count());
 
     RenderVoicesAndBuses(output);
+
+    GraphExecutionPlan* active_plan = graph_plan_store_.ActivePlan();
+
+    if (active_plan != nullptr) {
+      GraphExecutor::Render(*active_plan, output, output.frame_count(),
+                            context.sample_rate_hz, context.clock_frame);
+    }
 
     const auto render_end = std::chrono::steady_clock::now();
     const double duration_seconds =
@@ -219,6 +310,10 @@ class AudioRuntime::Impl {
   VoicePool voice_pool_;
   BusSystem bus_system_;
   AudioBuffer mix_scratch_;
+  AudioGraph graph_;
+
+  GraphPlanStore graph_plan_store_;
+  std::uint32_t max_frames_per_block_;
   std::atomic<bool> is_active_{false};
 };
 
@@ -235,17 +330,12 @@ AudioRuntime::~AudioRuntime() {
 Status AudioRuntime::Start(const DeviceConfig& config) {
   return impl_->Start(config);
 }
-
 Status AudioRuntime::Stop() { return impl_->Stop(); }
-
 Status AudioRuntime::Shutdown() { return impl_->Shutdown(); }
-
 Status AudioRuntime::Submit(const Command& command) {
   return impl_->Submit(command);
 }
-
 bool AudioRuntime::is_running() const noexcept { return impl_->is_running(); }
-
 RuntimeStats AudioRuntime::stats() const noexcept { return impl_->stats(); }
 
 StatusOr<Voice> AudioRuntime::CreateVoice() {
@@ -255,6 +345,7 @@ StatusOr<Voice> AudioRuntime::CreateVoice() {
     impl_->RecordVoiceCreationFailure();
     return id_or.status();
   }
+
   VoiceId id = id_or.value();
   Status submit_status =
       Submit({.type = CommandType::kCreateVoice, .voice_id = id});
@@ -296,9 +387,27 @@ Bus AudioRuntime::MasterBus() noexcept { return Bus(this, kMasterBusId); }
 void AudioRuntime::ReleaseVoiceReservation(VoiceId id) noexcept {
   impl_->ReleaseVoice(id);
 }
-
 void AudioRuntime::ReleaseBusReservation(BusId id) noexcept {
   impl_->ReleaseBus(id);
+}
+
+AudioGraph& AudioRuntime::graph() noexcept { return impl_->graph(); }
+
+GraphNodeHandle AudioRuntime::GetGraphNode(NodeId id) noexcept {
+  return GraphNodeHandle(this, id);
+}
+
+StatusOr<GraphPlanHandle> AudioRuntime::CompileAndStageGraph() {
+  return impl_->CompileAndStageGraph();
+}
+
+Status AudioRuntime::ActivateGraphPlan(GraphPlanHandle handle) {
+  return Submit(
+      {.type = CommandType::kActivateGraphPlan, .plan_handle = handle});
+}
+
+void AudioRuntime::ReleaseStagedGraphPlan(GraphPlanHandle handle) noexcept {
+  impl_->ReleaseStagedGraphPlan(handle);
 }
 
 }  // namespace lavanda

@@ -40,6 +40,10 @@ void RenderDiagnostics::RecordBusCreationFailure() noexcept {
   bus_creation_failures_.fetch_add(1, std::memory_order_relaxed);
 }
 
+void RenderDiagnostics::RecordGraphCompilationFailure() noexcept {
+  graph_compilation_failures_.fetch_add(1, std::memory_order_relaxed);
+}
+
 void RenderDiagnostics::RecordCommandFailure() noexcept {
   command_failures_.fetch_add(1, std::memory_order_relaxed);
 }
@@ -63,6 +67,8 @@ RuntimeStats RenderDiagnostics::Snapshot() const noexcept {
       voice_creation_failures_.load(std::memory_order_relaxed);
   stats.bus_creation_failures =
       bus_creation_failures_.load(std::memory_order_relaxed);
+  stats.graph_compilation_failures =
+      graph_compilation_failures_.load(std::memory_order_relaxed);
   stats.command_failures = command_failures_.load(std::memory_order_relaxed);
 
   return stats;

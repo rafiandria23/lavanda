@@ -3,6 +3,8 @@
 
 #include <cstdint>
 
+#include "lavanda/graph/graph_plan_handle.h"
+#include "lavanda/graph/node_id.h"
 #include "lavanda/runtime/handles.h"
 
 namespace lavanda {
@@ -21,10 +23,17 @@ enum class CommandType : std::uint8_t {
   kSetVoicePan,
   kSetVoiceFrequency,
   kSetVoiceBus,
-
   kCreateBus,
   kDestroyBus,
   kSetBusGain,
+
+  kSetNodeGain,
+  kSetNodeFrequency,
+  kSetNodeCutoff,
+  kSetNodePan,
+  kSetNodeDelayFrames,
+
+  kActivateGraphPlan,
 };
 
 struct Command {
@@ -32,6 +41,8 @@ struct Command {
   float value = 0.0f;
   VoiceId voice_id;
   BusId bus_id;
+  NodeId node_id;
+  GraphPlanHandle plan_handle;
 };
 
 }  // namespace lavanda

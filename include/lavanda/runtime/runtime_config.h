@@ -3,6 +3,8 @@
 
 #include <cstddef>
 
+#include "lavanda/graph/graph_config.h"
+
 namespace lavanda {
 
 struct RuntimeConfig {
@@ -12,12 +14,12 @@ struct RuntimeConfig {
       : command_queue_capacity(command_queue_capacity_value) {}
 
   std::size_t command_queue_capacity = 64;
-
   std::size_t max_voices = 32;
-
   std::size_t max_user_buses = 8;
-
   std::size_t max_frames_per_block = 4096;
+
+  GraphConfig graph_config;
+  std::size_t max_graph_plans = 4;
 };
 
 }  // namespace lavanda

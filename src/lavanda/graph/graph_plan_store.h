@@ -10,18 +10,9 @@
 #include "lavanda/core/status.h"
 #include "lavanda/graph/execution_plan.h"
 #include "lavanda/graph/graph.h"
+#include "lavanda/graph/graph_plan_handle.h"
 
 namespace lavanda {
-
-struct GraphPlanHandle {
-  static constexpr std::uint32_t kInvalidIndex =
-      std::numeric_limits<std::uint32_t>::max();
-
-  std::uint32_t slot_index = kInvalidIndex;
-  std::uint32_t generation = 0;
-
-  bool is_valid() const noexcept { return slot_index != kInvalidIndex; }
-};
 
 enum class GraphPlanSlotState : std::uint8_t {
   kFree,

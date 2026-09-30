@@ -11,6 +11,7 @@
 #include "lavanda/device/device_config.h"
 #include "lavanda/graph/graph.h"
 #include "lavanda/graph/graph_config.h"
+#include "lavanda/graph/graph_node_handle.h"
 #include "lavanda/graph/node.h"
 #include "lavanda/graph/node_id.h"
 #include "lavanda/runtime/audio_runtime.h"

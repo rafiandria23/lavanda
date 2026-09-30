@@ -6,6 +6,9 @@
 #include "lavanda/core/status.h"
 #include "lavanda/device/audio_device.h"
 #include "lavanda/device/device_config.h"
+#include "lavanda/graph/graph.h"
+#include "lavanda/graph/graph_config.h"
+#include "lavanda/graph/graph_node_handle.h"
 #include "lavanda/runtime/command.h"
 #include "lavanda/runtime/mixing.h"
 #include "lavanda/runtime/runtime_config.h"
@@ -25,26 +28,33 @@ class AudioRuntime {
   AudioRuntime& operator=(AudioRuntime&&) = delete;
 
   Status Start(const DeviceConfig& config = DeviceConfig());
-
   Status Stop();
 
   Status Shutdown();
 
   Status Submit(const Command& command);
-
   bool is_running() const noexcept;
-
   RuntimeStats stats() const noexcept;
 
   StatusOr<Voice> CreateVoice();
-
   StatusOr<Bus> CreateBus();
-
   Bus MasterBus() noexcept;
+
+  AudioGraph& graph() noexcept;
+
+  GraphNodeHandle GetGraphNode(NodeId id) noexcept;
+
+  StatusOr<GraphPlanHandle> CompileAndStageGraph();
+
+  Status ActivateGraphPlan(GraphPlanHandle handle);
+
+  void ReleaseStagedGraphPlan(GraphPlanHandle handle) noexcept;
 
  private:
   friend class Voice;
   friend class Bus;
+  friend class GraphNodeHandle;
+
   void ReleaseVoiceReservation(VoiceId id) noexcept;
   void ReleaseBusReservation(BusId id) noexcept;
 

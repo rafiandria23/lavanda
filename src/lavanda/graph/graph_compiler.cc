@@ -240,9 +240,9 @@ StatusOr<GraphExecutionPlan> GraphCompiler::Compile(
   const std::uint32_t output_channel_count =
       graph.GetNode(output)->output_channel_count();
 
-  return GraphExecutionPlan(std::move(steps), std::move(buffers),
-                            output_buffer_index, output_channel_count,
-                            max_frames_per_block);
+  return GraphExecutionPlan(std::move(steps), std::move(order),
+                            std::move(buffers), output_buffer_index,
+                            output_channel_count, max_frames_per_block);
 }
 
 }  // namespace lavanda
