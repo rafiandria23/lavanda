@@ -44,6 +44,14 @@ void RenderDiagnostics::RecordGraphCompilationFailure() noexcept {
   graph_compilation_failures_.fetch_add(1, std::memory_order_relaxed);
 }
 
+void RenderDiagnostics::RecordGraphActivation(
+    std::uint32_t node_count, std::uint32_t plan_generation) noexcept {
+  active_graph_node_count_.store(node_count, std::memory_order_relaxed);
+  active_graph_plan_generation_.store(plan_generation,
+                                      std::memory_order_relaxed);
+  graph_activation_count_.fetch_add(1, std::memory_order_relaxed);
+}
+
 void RenderDiagnostics::RecordCommandFailure() noexcept {
   command_failures_.fetch_add(1, std::memory_order_relaxed);
 }
@@ -69,6 +77,12 @@ RuntimeStats RenderDiagnostics::Snapshot() const noexcept {
       bus_creation_failures_.load(std::memory_order_relaxed);
   stats.graph_compilation_failures =
       graph_compilation_failures_.load(std::memory_order_relaxed);
+  stats.graph_activation_count =
+      graph_activation_count_.load(std::memory_order_relaxed);
+  stats.active_graph_node_count =
+      active_graph_node_count_.load(std::memory_order_relaxed);
+  stats.active_graph_plan_generation =
+      active_graph_plan_generation_.load(std::memory_order_relaxed);
   stats.command_failures = command_failures_.load(std::memory_order_relaxed);
 
   return stats;

@@ -16,6 +16,9 @@ struct RuntimeStats {
   std::uint64_t voice_creation_failures = 0;
   std::uint64_t bus_creation_failures = 0;
   std::uint64_t graph_compilation_failures = 0;
+  std::uint64_t graph_activation_count = 0;
+  std::uint32_t active_graph_node_count = 0;
+  std::uint32_t active_graph_plan_generation = 0;
   std::uint64_t command_failures;
 };
 

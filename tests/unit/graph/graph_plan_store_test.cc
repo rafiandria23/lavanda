@@ -203,5 +203,86 @@ TEST(GraphPlanStoreTest, ReleaseStagedPlanIsSafeNoOpOnStaleHandle) {
   SUCCEED();
 }
 
+TEST(GraphPlanStoreTest, TryActivateReportsWhetherActivationHappened) {
+  GraphPlanStore store(2);
+  AudioGraph graph = MakeSimpleGraph();
+  StatusOr<GraphPlanHandle> handle = store.BuildAndStage(graph, 512);
+
+  ASSERT_TRUE(handle.ok());
+
+  EXPECT_TRUE(store.TryActivate(handle.value()));
+  EXPECT_FALSE(store.TryActivate(handle.value()))
+      << "already Active, no longer Pending";
+
+  GraphPlanHandle bogus{99, 0};
+
+  EXPECT_FALSE(store.TryActivate(bogus));
+}
+
+TEST(GraphPlanStoreTest, ActiveGenerationMatchesActivatedHandle) {
+  GraphPlanStore store(2);
+
+  EXPECT_EQ(store.ActiveGeneration(), 0u);
+
+  AudioGraph graph = MakeSimpleGraph();
+  StatusOr<GraphPlanHandle> handle = store.BuildAndStage(graph, 512);
+
+  ASSERT_TRUE(handle.ok());
+  ASSERT_TRUE(store.TryActivate(handle.value()));
+  EXPECT_EQ(store.ActiveGeneration(), handle.value().generation);
+}
+
+TEST(GraphPlanStoreTest, ReleaseStagedPlanReturnsTrueOnlyWhenReleased) {
+  GraphPlanStore store(1);
+  AudioGraph graph = MakeSimpleGraph();
+  StatusOr<GraphPlanHandle> handle = store.BuildAndStage(graph, 512);
+
+  ASSERT_TRUE(handle.ok());
+
+  EXPECT_TRUE(store.ReleaseStagedPlan(handle.value()));
+  EXPECT_FALSE(store.ReleaseStagedPlan(handle.value()));
+}
+
+TEST(GraphPlanStoreTest, MarkActivationSubmittedBlocksRelease) {
+  GraphPlanStore store(1);
+  AudioGraph graph = MakeSimpleGraph();
+  StatusOr<GraphPlanHandle> handle = store.BuildAndStage(graph, 512);
+
+  ASSERT_TRUE(handle.ok());
+
+  store.MarkActivationSubmitted(handle.value());
+
+  EXPECT_FALSE(store.ReleaseStagedPlan(handle.value()));
+
+  EXPECT_TRUE(store.TryActivate(handle.value()));
+  EXPECT_NE(store.ActivePlan(), nullptr);
+}
+
+TEST(GraphPlanStoreTest, RestagingASlotClearsTheSubmittedFlag) {
+  GraphPlanStore store(2);
+  AudioGraph graph_a = MakeSimpleGraph();
+  StatusOr<GraphPlanHandle> h1 = store.BuildAndStage(graph_a, 512);
+
+  ASSERT_TRUE(h1.ok());
+
+  store.MarkActivationSubmitted(h1.value());
+
+  ASSERT_TRUE(store.TryActivate(h1.value()));
+
+  AudioGraph graph_b = MakeSimpleGraph();
+  StatusOr<GraphPlanHandle> h2 = store.BuildAndStage(graph_b, 512);
+
+  ASSERT_TRUE(h2.ok());
+  ASSERT_TRUE(store.TryActivate(h2.value()));
+
+  AudioGraph graph_c = MakeSimpleGraph();
+  StatusOr<GraphPlanHandle> h3 = store.BuildAndStage(graph_c, 512);
+
+  ASSERT_TRUE(h3.ok());
+  ASSERT_EQ(h3.value().slot_index, h1.value().slot_index);
+  EXPECT_TRUE(store.ReleaseStagedPlan(h3.value()))
+      << "the reused slot must not inherit the previous plan's flag";
+}
+
 }  // namespace
 }  // namespace lavanda

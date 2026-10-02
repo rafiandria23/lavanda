@@ -178,8 +178,12 @@ class AudioRuntime::Impl {
     return handle_or;
   }
 
-  void ReleaseStagedGraphPlan(GraphPlanHandle handle) noexcept {
-    graph_plan_store_.ReleaseStagedPlan(handle);
+  bool ReleaseStagedGraphPlan(GraphPlanHandle handle) noexcept {
+    return graph_plan_store_.ReleaseStagedPlan(handle);
+  }
+
+  void MarkGraphActivationSubmitted(GraphPlanHandle handle) noexcept {
+    graph_plan_store_.MarkActivationSubmitted(handle);
   }
 
  private:
@@ -199,7 +203,14 @@ class AudioRuntime::Impl {
       bus_system_.ApplyCommand(command);
 
       if (command.type == CommandType::kActivateGraphPlan) {
-        graph_plan_store_.TryActivate(command.plan_handle);
+        if (graph_plan_store_.TryActivate(command.plan_handle)) {
+          GraphExecutionPlan* activated = graph_plan_store_.ActivePlan();
+
+          if (activated != nullptr) {
+            diagnostics_.RecordGraphActivation(
+                activated->step_count(), graph_plan_store_.ActiveGeneration());
+          }
+        }
       } else {
         GraphExecutionPlan* active_plan = graph_plan_store_.ActivePlan();
 
@@ -402,12 +413,24 @@ StatusOr<GraphPlanHandle> AudioRuntime::CompileAndStageGraph() {
 }
 
 Status AudioRuntime::ActivateGraphPlan(GraphPlanHandle handle) {
-  return Submit(
-      {.type = CommandType::kActivateGraphPlan, .plan_handle = handle});
+  Status status =
+      Submit({.type = CommandType::kActivateGraphPlan, .plan_handle = handle});
+
+  if (status.ok()) {
+    impl_->MarkGraphActivationSubmitted(handle);
+  }
+
+  return status;
 }
 
-void AudioRuntime::ReleaseStagedGraphPlan(GraphPlanHandle handle) noexcept {
-  impl_->ReleaseStagedGraphPlan(handle);
+Status AudioRuntime::ReleaseStagedGraphPlan(GraphPlanHandle handle) {
+  if (!impl_->ReleaseStagedGraphPlan(handle)) {
+    return Status(ErrorCode::kInvalidArgument,
+                  "plan is not a releasable staged plan (stale handle, not "
+                  "pending, or activation already submitted)");
+  }
+
+  return Status::Ok();
 }
 
 }  // namespace lavanda

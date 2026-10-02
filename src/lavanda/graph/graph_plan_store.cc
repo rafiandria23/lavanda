@@ -35,59 +35,81 @@ StatusOr<GraphPlanHandle> GraphPlanStore::BuildAndStage(
   }
 
   Slot& slot = slots_[free_index];
-
   slot.state.store(GraphPlanSlotState::kBuilding, std::memory_order_relaxed);
-  slot.generation += 1;
+
+  const std::uint32_t generation =
+      slot.generation.load(std::memory_order_relaxed) + 1u;
+
+  slot.generation.store(generation, std::memory_order_relaxed);
   slot.plan = std::make_unique<GraphExecutionPlan>(std::move(plan_or.value()));
+  slot.activation_submitted = false;
   slot.state.store(GraphPlanSlotState::kPending, std::memory_order_release);
 
   GraphPlanHandle handle;
-
   handle.slot_index = static_cast<std::uint32_t>(free_index);
-  handle.generation = slot.generation;
+  handle.generation = generation;
 
   return handle;
 }
 
-void GraphPlanStore::ReleaseStagedPlan(GraphPlanHandle handle) noexcept {
+void GraphPlanStore::MarkActivationSubmitted(GraphPlanHandle handle) noexcept {
   if (handle.slot_index >= slots_.size()) {
     return;
   }
 
   Slot& slot = slots_[handle.slot_index];
 
-  if (slot.generation != handle.generation) {
+  if (slot.generation.load(std::memory_order_relaxed) != handle.generation) {
     return;
+  }
+
+  slot.activation_submitted = true;
+}
+
+bool GraphPlanStore::ReleaseStagedPlan(GraphPlanHandle handle) noexcept {
+  if (handle.slot_index >= slots_.size()) {
+    return false;
+  }
+
+  Slot& slot = slots_[handle.slot_index];
+
+  if (slot.generation.load(std::memory_order_relaxed) != handle.generation) {
+    return false;
+  }
+
+  if (slot.activation_submitted) {
+    return false;
   }
 
   if (slot.state.load(std::memory_order_acquire) !=
       GraphPlanSlotState::kPending) {
-    return;
+    return false;
   }
 
   slot.plan.reset();
   slot.state.store(GraphPlanSlotState::kFree, std::memory_order_release);
+
+  return true;
 }
 
-void GraphPlanStore::TryActivate(GraphPlanHandle handle) noexcept {
+bool GraphPlanStore::TryActivate(GraphPlanHandle handle) noexcept {
   if (handle.slot_index >= slots_.size()) {
-    return;
+    return false;
   }
 
   Slot& target = slots_[handle.slot_index];
 
-  if (target.generation != handle.generation) {
-    return;
+  if (target.state.load(std::memory_order_acquire) !=
+      GraphPlanSlotState::kPending) {
+    return false;
   }
 
-  if (target.state.load(std::memory_order_relaxed) !=
-      GraphPlanSlotState::kPending) {
-    return;
+  if (target.generation.load(std::memory_order_relaxed) != handle.generation) {
+    return false;
   }
 
   if (active_slot_index_ != GraphPlanHandle::kInvalidIndex) {
     Slot& previous = slots_[active_slot_index_];
-
     previous.state.store(GraphPlanSlotState::kRetired,
                          std::memory_order_relaxed);
     previous.state.store(GraphPlanSlotState::kFree, std::memory_order_release);
@@ -95,6 +117,8 @@ void GraphPlanStore::TryActivate(GraphPlanHandle handle) noexcept {
 
   target.state.store(GraphPlanSlotState::kActive, std::memory_order_relaxed);
   active_slot_index_ = handle.slot_index;
+
+  return true;
 }
 
 GraphExecutionPlan* GraphPlanStore::ActivePlan() noexcept {
@@ -103,6 +127,14 @@ GraphExecutionPlan* GraphPlanStore::ActivePlan() noexcept {
   }
 
   return slots_[active_slot_index_].plan.get();
+}
+
+std::uint32_t GraphPlanStore::ActiveGeneration() const noexcept {
+  if (active_slot_index_ == GraphPlanHandle::kInvalidIndex) {
+    return 0;
+  }
+
+  return slots_[active_slot_index_].generation.load(std::memory_order_relaxed);
 }
 
 }  // namespace lavanda

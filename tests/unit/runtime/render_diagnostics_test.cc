@@ -134,5 +134,23 @@ TEST(RenderDiagnosticsTest, FailureCountersAreIndependentOfEachOther) {
   EXPECT_EQ(stats.command_failures, 0u);
 }
 
+TEST(RenderDiagnosticsTest, RecordGraphActivationUpdatesAllThreeFields) {
+  RenderDiagnostics diagnostics;
+  RuntimeStats initial = diagnostics.Snapshot();
+
+  EXPECT_EQ(initial.graph_activation_count, 0u);
+  EXPECT_EQ(initial.active_graph_node_count, 0u);
+  EXPECT_EQ(initial.active_graph_plan_generation, 0u);
+
+  diagnostics.RecordGraphActivation(7, 3);
+  diagnostics.RecordGraphActivation(4, 5);
+
+  RuntimeStats stats = diagnostics.Snapshot();
+
+  EXPECT_EQ(stats.graph_activation_count, 2u);
+  EXPECT_EQ(stats.active_graph_node_count, 4u);
+  EXPECT_EQ(stats.active_graph_plan_generation, 5u);
+}
+
 }  // namespace
 }  // namespace lavanda

@@ -48,7 +48,7 @@ class AudioRuntime {
 
   Status ActivateGraphPlan(GraphPlanHandle handle);
 
-  void ReleaseStagedGraphPlan(GraphPlanHandle handle) noexcept;
+  Status ReleaseStagedGraphPlan(GraphPlanHandle handle);
 
  private:
   friend class Voice;

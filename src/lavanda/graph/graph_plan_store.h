@@ -2,8 +2,8 @@
 #define LAVANDA_GRAPH_GRAPH_PLAN_STORE_H_
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <memory>
 #include <vector>
 
@@ -36,19 +36,24 @@ class GraphPlanStore {
   StatusOr<GraphPlanHandle> BuildAndStage(const AudioGraph& graph,
                                           std::uint32_t max_frames_per_block);
 
-  void ReleaseStagedPlan(GraphPlanHandle handle) noexcept;
+  void MarkActivationSubmitted(GraphPlanHandle handle) noexcept;
+
+  bool ReleaseStagedPlan(GraphPlanHandle handle) noexcept;
 
   // --- Audio-thread only ----------------------------------------------
 
-  void TryActivate(GraphPlanHandle handle) noexcept;
+  bool TryActivate(GraphPlanHandle handle) noexcept;
 
   GraphExecutionPlan* ActivePlan() noexcept;
+
+  std::uint32_t ActiveGeneration() const noexcept;
 
  private:
   struct Slot {
     std::atomic<GraphPlanSlotState> state{GraphPlanSlotState::kFree};
-    std::uint32_t generation = 0;
+    std::atomic<std::uint32_t> generation{0};
     std::unique_ptr<GraphExecutionPlan> plan;
+    bool activation_submitted = false;
   };
 
   std::vector<Slot> slots_;

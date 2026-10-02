@@ -11,6 +11,33 @@
 namespace lavanda {
 namespace {
 
+NodeId BuildMonoGraph(AudioRuntime& runtime, float oscillator_gain) {
+  NodeId osc =
+      runtime.graph().AddNode(std::make_unique<OscillatorNode>()).value();
+  NodeId output =
+      runtime.graph().AddNode(std::make_unique<OutputNode>(1)).value();
+
+  static_cast<OscillatorNode*>(runtime.graph().GetNode(osc))
+      ->SetGain(oscillator_gain);
+
+  runtime.graph().Connect(osc, output, 0);
+  runtime.graph().SetOutput(output);
+
+  return osc;
+}
+
+bool HasNonSilence(const AudioBuffer& buffer) {
+  for (std::uint32_t f = 0; f < buffer.frame_count(); ++f) {
+    for (std::uint32_t c = 0; c < buffer.channel_count(); ++c) {
+      if (buffer(f, c) != 0.0f) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 TEST(AudioRuntimeGraphTest, GraphAccessorReturnsUsableAudioGraph) {
   AudioRuntime runtime(std::make_unique<test_support::FakeAudioDevice>());
   StatusOr<NodeId> osc =
@@ -291,6 +318,199 @@ TEST(AudioRuntimeGraphTest, ReleaseStagedGraphPlanFreesSlotForReuse) {
   StatusOr<GraphPlanHandle> second = runtime.CompileAndStageGraph();
 
   EXPECT_TRUE(second.ok());
+}
+
+TEST(AudioRuntimeGraphTest, ParameterCommandAfterActivationAppliesToNewPlan) {
+  auto owned_device = std::make_unique<test_support::FakeAudioDevice>();
+  test_support::FakeAudioDevice* device = owned_device.get();
+  AudioRuntime runtime(std::move(owned_device));
+
+  ASSERT_TRUE(runtime.Start().ok());
+
+  NodeId osc = BuildMonoGraph(runtime, 0.0f);
+  StatusOr<GraphPlanHandle> plan = runtime.CompileAndStageGraph();
+
+  ASSERT_TRUE(plan.ok());
+  ASSERT_TRUE(runtime.ActivateGraphPlan(plan.value()).ok());
+  ASSERT_TRUE(runtime.GetGraphNode(osc).SetGain(1.0f).ok());
+
+  AudioBuffer buffer(64, 1);
+
+  ASSERT_TRUE(device->PumpRender(buffer.View()));
+  EXPECT_TRUE(HasNonSilence(buffer))
+      << "activate-then-set: the command must reach the NEW plan";
+  EXPECT_FLOAT_EQ(
+      static_cast<OscillatorNode*>(runtime.graph().GetNode(osc))->gain(), 0.0f)
+      << "the control-side graph's own node must be untouched";
+}
+
+TEST(AudioRuntimeGraphTest,
+     ParameterCommandBeforeActivationTargetsOutgoingPlanNotIncomingOne) {
+  auto owned_device = std::make_unique<test_support::FakeAudioDevice>();
+  test_support::FakeAudioDevice* device = owned_device.get();
+  AudioRuntime runtime(std::move(owned_device));
+
+  ASSERT_TRUE(runtime.Start().ok());
+
+  NodeId osc = BuildMonoGraph(runtime, 0.0f);
+  StatusOr<GraphPlanHandle> plan_a = runtime.CompileAndStageGraph();
+
+  ASSERT_TRUE(plan_a.ok());
+  ASSERT_TRUE(runtime.ActivateGraphPlan(plan_a.value()).ok());
+
+  AudioBuffer drain(64, 1);
+
+  ASSERT_TRUE(device->PumpRender(drain.View()));
+
+  StatusOr<GraphPlanHandle> plan_b = runtime.CompileAndStageGraph();
+
+  ASSERT_TRUE(plan_b.ok());
+  ASSERT_TRUE(runtime.GetGraphNode(osc).SetGain(1.0f).ok());
+  ASSERT_TRUE(runtime.ActivateGraphPlan(plan_b.value()).ok());
+
+  AudioBuffer buffer(64, 1);
+
+  ASSERT_TRUE(device->PumpRender(buffer.View()));
+  EXPECT_FALSE(HasNonSilence(buffer))
+      << "set-then-activate: the command applied to the outgoing plan, so "
+         "the incoming silent plan must stay silent";
+}
+
+TEST(AudioRuntimeGraphTest, ParameterCommandWithNoActivePlanIsDropped) {
+  auto owned_device = std::make_unique<test_support::FakeAudioDevice>();
+  test_support::FakeAudioDevice* device = owned_device.get();
+  AudioRuntime runtime(std::move(owned_device));
+
+  ASSERT_TRUE(runtime.Start().ok());
+
+  NodeId osc = BuildMonoGraph(runtime, 0.0f);
+
+  ASSERT_TRUE(runtime.GetGraphNode(osc).SetGain(1.0f).ok());
+
+  StatusOr<GraphPlanHandle> plan = runtime.CompileAndStageGraph();
+
+  ASSERT_TRUE(plan.ok());
+  ASSERT_TRUE(runtime.ActivateGraphPlan(plan.value()).ok());
+
+  AudioBuffer buffer(64, 1);
+
+  ASSERT_TRUE(device->PumpRender(buffer.View()));
+  EXPECT_FALSE(HasNonSilence(buffer));
+}
+
+TEST(AudioRuntimeGraphTest, TwoActivationsInOneBlockLeaveTheLaterOneActive) {
+  auto owned_device = std::make_unique<test_support::FakeAudioDevice>();
+  test_support::FakeAudioDevice* device = owned_device.get();
+  AudioRuntime runtime(std::move(owned_device));
+
+  ASSERT_TRUE(runtime.Start().ok());
+
+  NodeId osc = BuildMonoGraph(runtime, 0.0f);
+  StatusOr<GraphPlanHandle> silent = runtime.CompileAndStageGraph();
+
+  ASSERT_TRUE(silent.ok());
+
+  static_cast<OscillatorNode*>(runtime.graph().GetNode(osc))->SetGain(1.0f);
+
+  StatusOr<GraphPlanHandle> audible = runtime.CompileAndStageGraph();
+
+  ASSERT_TRUE(audible.ok());
+
+  ASSERT_TRUE(runtime.ActivateGraphPlan(silent.value()).ok());
+  ASSERT_TRUE(runtime.ActivateGraphPlan(audible.value()).ok());
+
+  AudioBuffer buffer(64, 1);
+
+  ASSERT_TRUE(device->PumpRender(buffer.View()));
+  EXPECT_TRUE(HasNonSilence(buffer));
+  EXPECT_EQ(runtime.stats().graph_activation_count, 2u);
+  EXPECT_EQ(runtime.stats().active_graph_plan_generation,
+            audible.value().generation);
+}
+
+TEST(AudioRuntimeGraphTest, StatsReportActivationCountNodeCountAndGeneration) {
+  auto owned_device = std::make_unique<test_support::FakeAudioDevice>();
+  test_support::FakeAudioDevice* device = owned_device.get();
+  AudioRuntime runtime(std::move(owned_device));
+
+  ASSERT_TRUE(runtime.Start().ok());
+
+  BuildMonoGraph(runtime, 1.0f);
+
+  StatusOr<GraphPlanHandle> plan = runtime.CompileAndStageGraph();
+
+  ASSERT_TRUE(plan.ok());
+  EXPECT_EQ(runtime.stats().graph_activation_count, 0u);
+
+  ASSERT_TRUE(runtime.ActivateGraphPlan(plan.value()).ok());
+
+  AudioBuffer buffer(64, 1);
+
+  ASSERT_TRUE(device->PumpRender(buffer.View()));
+
+  RuntimeStats stats = runtime.stats();
+
+  EXPECT_EQ(stats.graph_activation_count, 1u);
+  EXPECT_EQ(stats.active_graph_node_count, 2u);
+  EXPECT_EQ(stats.active_graph_plan_generation, plan.value().generation);
+}
+
+TEST(AudioRuntimeGraphTest, StaleActivationCommandIsNotCounted) {
+  auto owned_device = std::make_unique<test_support::FakeAudioDevice>();
+  test_support::FakeAudioDevice* device = owned_device.get();
+  AudioRuntime runtime(std::move(owned_device));
+
+  ASSERT_TRUE(runtime.Start().ok());
+
+  BuildMonoGraph(runtime, 1.0f);
+
+  StatusOr<GraphPlanHandle> plan = runtime.CompileAndStageGraph();
+
+  ASSERT_TRUE(plan.ok());
+  ASSERT_TRUE(runtime.ActivateGraphPlan(plan.value()).ok());
+
+  AudioBuffer buffer(64, 1);
+
+  ASSERT_TRUE(device->PumpRender(buffer.View()));
+
+  GraphPlanHandle stale = plan.value();
+  stale.generation += 1;
+
+  ASSERT_TRUE(runtime
+                  .Submit({.type = CommandType::kActivateGraphPlan,
+                           .plan_handle = stale})
+                  .ok());
+  ASSERT_TRUE(device->PumpRender(buffer.View()));
+
+  EXPECT_EQ(runtime.stats().graph_activation_count, 1u);
+  EXPECT_TRUE(HasNonSilence(buffer)) << "the real plan must stay active";
+}
+
+TEST(AudioRuntimeGraphTest,
+     ReleaseStagedGraphPlanRefusesOnceActivationWasSubmitted) {
+  auto owned_device = std::make_unique<test_support::FakeAudioDevice>();
+  test_support::FakeAudioDevice* device = owned_device.get();
+  AudioRuntime runtime(std::move(owned_device));
+
+  ASSERT_TRUE(runtime.Start().ok());
+
+  BuildMonoGraph(runtime, 1.0f);
+
+  StatusOr<GraphPlanHandle> plan = runtime.CompileAndStageGraph();
+
+  ASSERT_TRUE(plan.ok());
+  ASSERT_TRUE(runtime.ActivateGraphPlan(plan.value()).ok());
+
+  Status release = runtime.ReleaseStagedGraphPlan(plan.value());
+
+  EXPECT_FALSE(release.ok());
+  EXPECT_EQ(release.code(), ErrorCode::kInvalidArgument);
+
+  AudioBuffer buffer(64, 1);
+
+  ASSERT_TRUE(device->PumpRender(buffer.View()));
+  EXPECT_TRUE(HasNonSilence(buffer))
+      << "the refused release must not have torn the plan down";
 }
 
 }  // namespace
