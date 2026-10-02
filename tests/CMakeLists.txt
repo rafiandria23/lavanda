@@ -68,6 +68,7 @@ lavanda_set_project_warnings(lavanda_integration_tests ${LAVANDA_WARNINGS_AS_ERR
 add_executable(lavanda_concurrency_tests
   concurrency/command_queue_concurrency_test.cc
   concurrency/audio_runtime_concurrency_test.cc
+  concurrency/audio_runtime_graph_concurrency_test.cc
 )
 target_link_libraries(lavanda_concurrency_tests PRIVATE
   lavanda::lavanda
