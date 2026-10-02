@@ -3,9 +3,11 @@
 Lavanda is a C++20 real-time audio engine, built in phases. Phase 1
 established a platform-independent audio device interface plus a working
 Core Audio backend for macOS. Phase 2 built a real-time runtime on top of
-that boundary. Phase 3 adds voices, mixing, and buses, letting an
+that boundary. Phase 3 added voices, mixing, and buses, letting an
 application create and independently control multiple simultaneous
-sounds.
+sounds. Phase 4 adds a DSP graph: nodes (oscillators, gains, filters,
+delays, mixers, pans) wired into a graph on the control side, compiled to
+an immutable execution plan, and executed by the audio thread.
 
 ```
 Application -> Lavanda Engine -> DSP/Graph/Runtime -> Audio Device
@@ -17,8 +19,9 @@ for the Phase 1 device abstraction,
 [`docs/architecture/realtime_runtime.md`](docs/architecture/realtime_runtime.md)
 for the Phase 2 runtime,
 [`docs/architecture/voices_and_mixing.md`](docs/architecture/voices_and_mixing.md)
-for the Phase 3 voice/bus mixer, and [`CHANGELOG.md`](CHANGELOG.md) for
-what's shipped.
+for the Phase 3 voice/bus mixer,
+[`docs/architecture/dsp_graph.md`](docs/architecture/dsp_graph.md) for the
+Phase 4 DSP graph, and [`CHANGELOG.md`](CHANGELOG.md) for what's shipped.
 
 ## Current platform support
 
@@ -75,6 +78,43 @@ for the full design -- handle identity and stale-handle safety, the
 mixer's gain/pan math, bus routing, and real-time safety guarantees for a
 populated engine. Try it with `examples/mixing`.
 
+## DSP graph (Phase 4)
+
+Build a graph of nodes on the control side, compile it, and activate it. The
+audio thread never sees the mutable graph -- it only executes the compiled,
+immutable plan:
+
+```cpp
+lavanda::AudioRuntime runtime(std::move(device));
+runtime.Start();
+
+lavanda::AudioGraph& graph = runtime.graph();
+auto osc  = graph.AddNode(std::make_unique<lavanda::OscillatorNode>());
+auto gain = graph.AddNode(std::make_unique<lavanda::GainNode>(1));
+auto pan  = graph.AddNode(std::make_unique<lavanda::PanNode>());
+auto out  = graph.AddNode(std::make_unique<lavanda::OutputNode>(2));
+graph.Connect(osc.value(), gain.value(), 0);
+graph.Connect(gain.value(), pan.value(), 0);
+graph.Connect(pan.value(), out.value(), 0);
+graph.SetOutput(out.value());
+
+lavanda::StatusOr<lavanda::GraphPlanHandle> plan = runtime.CompileAndStageGraph();
+runtime.ActivateGraphPlan(plan.value());
+
+// Live parameter changes go through the command queue:
+runtime.GetGraphNode(osc.value()).SetFrequency(660.0f);
+```
+
+Compilation validates the whole graph (reachability, required inputs,
+cycles), orders it deterministically, and preallocates every buffer; a
+graph that fails to compile leaves the currently playing plan untouched. A
+replaced plan is never freed on the audio thread.
+
+See [`docs/architecture/dsp_graph.md`](docs/architecture/dsp_graph.md) for
+the full design -- mutable graph vs. immutable plan, the compiler, plan
+lifetime and activation, command ordering, and real-time safety
+verification. Try it with `examples/dsp_graph`.
+
 ## Build requirements
 
 - CMake >= 3.24
@@ -124,20 +164,40 @@ working build directory the way `cmake --build --target clean` does.
 
 ### Running the hardware-dependent integration tests
 
-Three integration tests exercise real hardware end to end -- the Phase 1
+Four integration tests exercise real hardware end to end -- the Phase 1
 device lifecycle, the Phase 2 runtime driving playback through
-`Submit()`, and the Phase 3 voice/bus mixer's full lifecycle checklist
+`Submit()`, the Phase 3 voice/bus mixer's full lifecycle checklist
 (multiple voices, gain/pan changes, bus routing, stop/destroy/recreate
-with stale-handle verification). All are opt-in, since CI runners aren't
-guaranteed to have an accessible audio output device, and because nobody
-wants audio I/O firing as a side effect of an ordinary `ctest` run:
+with stale-handle verification), and the Phase 4 DSP graph (linear graph
+with live parameter changes, multi-source replacement, a stateful delay
+sweep, and a deliberately broken graph that must leave the playing plan
+untouched). All are opt-in, since CI runners aren't guaranteed to have an
+accessible audio output device, and because nobody wants audio I/O firing
+as a side effect of an ordinary `ctest` run:
 
 ```sh
-LAVANDA_RUN_HARDWARE_TESTS=1 ctest --preset debug -R "DefaultOutputDevice|AudioRuntimeIntegration|AudioRuntimeMixingIntegration"
+LAVANDA_RUN_HARDWARE_TESTS=1 ctest --preset debug -R "DefaultOutputDevice|AudioRuntimeIntegration|AudioRuntimeMixingIntegration|AudioRuntimeGraphIntegration"
 ```
 
-Without that environment variable, all three skip themselves rather than
+Without that environment variable, all four skip themselves rather than
 failing.
+
+### Benchmarks
+
+The graph benchmark is off by default:
+
+```sh
+cmake --preset release -DLAVANDA_BUILD_BENCHMARKS=ON
+cmake --build --preset release
+```
+
+The `graph_benchmark` binary lands under `build/release/benchmarks/`; run it
+with no arguments for the default scenarios.
+
+Only a Release build gives meaningful numbers. A `GraphBenchmarkSmoke`
+ctest runs a short pass so the benchmark keeps building and running.
+Baseline numbers are in
+[`docs/architecture/dsp_graph.md`](docs/architecture/dsp_graph.md#performance-baseline).
 
 ## Running the examples
 
@@ -168,6 +228,15 @@ bus (centered), both buses feeding master -- demonstrates independent
 voice gain/pan, bus routing, and bus gain all mixing together audibly --
 the Phase 3 demonstration.
 
+```sh
+./build/debug/examples/dsp_graph/dsp_graph
+```
+
+Builds two oscillators -> mixer -> gain -> low-pass -> pan -> output,
+compiles and activates it, changes parameters live, shows a deliberately
+broken graph being rejected while the previous plan keeps playing, then
+replaces the graph by inserting a delay -- the Phase 4 demonstration.
+
 ## Project layout
 
 ```
@@ -176,19 +245,25 @@ src/lavanda/          Implementation
   platform/coreaudio/   Core Audio backend (Phase 1)
   runtime/               Real-time runtime internals (Phase 2),
                          voice/bus/mixer internals (Phase 3)
+  graph/                 Graph compiler, execution plan, plan store,
+                         executor, node implementations (Phase 4)
+include/lavanda/graph/ Public graph API, including built-in nodes
 tests/                Unit, concurrency, and integration tests
+benchmarks/            graph_benchmark (Phase 4, opt-in)
 examples/              device_probe (Phase 1), runtime_demo (Phase 2),
-                       mixing (Phase 3)
+                       mixing (Phase 3), dsp_graph (Phase 4)
 docs/architecture/    Design documentation
 ```
 
 ## Current project phase
 
-**Phase 3 of the planned build-out** (voices, mixing, and buses, built on
-Phase 2's real-time runtime). Still explicitly out of scope: a DSP graph,
-filters, effects, spatial audio, an asset/resource manager, streaming,
-MIDI, plugins, and a sample-accurate scheduler. See
-[`docs/architecture/voices_and_mixing.md`](docs/architecture/voices_and_mixing.md#what-remains-out-of-scope)
+**Phase 4 of the planned build-out** (a DSP graph and execution engine,
+built on Phase 2's runtime and Phase 3's mixer). Still explicitly out of
+scope: crossfading or state migration between graph plans, parameter
+smoothing, higher-order filters and effects, spatial audio, an
+asset/resource manager, streaming, MIDI, plugins, and a sample-accurate
+scheduler. See
+[`docs/architecture/dsp_graph.md`](docs/architecture/dsp_graph.md#out-of-scope)
 for the full list.
 
 ## License

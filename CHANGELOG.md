@@ -5,6 +5,87 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Phase 4: DSP Graph and Execution Engine
+
+#### Added
+
+- `AudioGraph` (public): mutable, control-side topology with generation-
+  checked `NodeId`s. Per-edit validation only (valid ids, input index,
+  channel match, self-connection, occupied input, capacity); cycles and
+  completeness are deferred to compilation. Move-only.
+- `AudioNode` / `NodeProcessContext` (public): node interface with
+  `Process()`, channel/input counts, and `Clone()`.
+- Built-in nodes (public, `include/lavanda/graph/nodes/`):
+  `OscillatorNode`, `GainNode`, `PanNode`, `MixerNode`,
+  `OnePoleLowPassNode`, `OnePoleHighPassNode`, `DelayNode`, `OutputNode`.
+- `GraphCompiler` (internal): reachability from the designated output,
+  required-input checks, cycle detection via Kahn's algorithm with a
+  deterministic smallest-`NodeId.index` tie-break, and liveness-based
+  buffer reuse (free lists keyed by channel count).
+- `GraphExecutionPlan` (internal): immutable, flat, preallocated plan
+  holding cloned nodes and the `NodeId` each step was compiled from.
+- `GraphPlanStore` (internal): fixed slots with atomic state and
+  generation; the audio thread activates and retires plans but never
+  destroys one -- destruction happens only on the control thread.
+- `GraphExecutor` (internal): audio-thread execution of a plan,
+  accumulating into the output; a graceful no-op on channel mismatch or an
+  oversized block.
+- `AudioRuntime` graph API: `graph()`, `GetGraphNode()`,
+  `CompileAndStageGraph()`, `ActivateGraphPlan()`,
+  `ReleaseStagedGraphPlan()`. `GraphNodeHandle` for live parameter changes.
+- New commands: `kSetNodeGain`, `kSetNodeFrequency`, `kSetNodeCutoff`,
+  `kSetNodePan`, `kSetNodeDelayFrames`, `kActivateGraphPlan`.
+- `RuntimeConfig`: `graph_config`, `max_graph_plans`.
+- `RuntimeStats`: `graph_compilation_failures`, `graph_activation_count`,
+  `active_graph_node_count`, `active_graph_plan_generation`.
+- Public `GraphPlanHandle` and `NodeId`, so public `Command` no longer
+  depends on internal headers.
+- Tests: unit tests for nodes, graph, compiler, plan store, executor, and
+  runtime/graph integration; real-time-safety tests under
+  `AllocationGuard` (including a test asserting compilation *does*
+  allocate); concurrency tests with a real render thread; a hardware-gated
+  integration test.
+- `benchmarks/graph_benchmark` (opt-in via `LAVANDA_BUILD_BENCHMARKS`) and a
+  `GraphBenchmarkSmoke` ctest.
+- `examples/dsp_graph`.
+- `docs/architecture/dsp_graph.md`.
+
+#### Changed
+
+- Render order is now legacy tone (overwrites) -> voice/bus mixer
+  (accumulates) -> graph (accumulates).
+- Node headers live under `include/lavanda/graph/nodes/` so applications
+  can construct them.
+
+#### Verified
+
+- Hardware-gated graph integration test and `examples/dsp_graph` against
+  real Core Audio output.
+- Benchmark baseline recorded in `docs/architecture/dsp_graph.md`.
+
+#### Scope notes
+
+- Recompiling gives nodes fresh state; there is no crossfade, state
+  migration, or parameter smoothing between or within plans. See
+  `docs/architecture/dsp_graph.md` for the full list.
+
+### Phase 3: Voices, Mixing, and Buses
+
+#### Added
+
+- `Voice` and `Bus` (public): application-facing handles for creating and
+  independently controlling simultaneous sounds and routing them through
+  buses into a master output.
+- `VoiceId` / `BusId`: generation-checked handles so stale handles are
+  rejected rather than addressing a reused slot.
+- Voice/bus commands: create, start, stop, destroy, gain, pan, frequency,
+  bus assignment, bus gain.
+- `RuntimeConfig` capacity limits for voices and buses; fixed-size,
+  preallocated pools on the audio side.
+- Equal-power pan math and mixing helpers.
+- `examples/mixing`, `docs/architecture/voices_and_mixing.md`, and
+  hardware-gated integration tests.
+
 ### Phase 2: Real-Time Audio Runtime
 
 #### Added
