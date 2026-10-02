@@ -52,6 +52,8 @@ class AudioBuffer {
   AudioBufferView View() noexcept;
   AudioBufferView View(std::uint32_t frame_count) noexcept;
 
+  const Sample* data() const noexcept { return storage_.data(); }
+
   void Clear() noexcept;
 
  private:
