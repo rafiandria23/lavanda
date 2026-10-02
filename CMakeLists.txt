@@ -24,6 +24,7 @@ include(CTest)
 
 option(LAVANDA_BUILD_TESTS "Build Lavanda's unit and integration tests" ${PROJECT_IS_TOP_LEVEL})
 option(LAVANDA_BUILD_EXAMPLES "Build Lavanda's examples" ${PROJECT_IS_TOP_LEVEL})
+option(LAVANDA_BUILD_BENCHMARKS "Build Lavanda's benchmarks" OFF)
 option(LAVANDA_WARNINGS_AS_ERRORS "Treat compiler warnings as errors for project-owned targets" ON)
 
 add_library(lavanda STATIC
@@ -103,6 +104,10 @@ if(LAVANDA_BUILD_EXAMPLES)
   else()
     message(STATUS "lavanda: skipping examples (they exercise a real backend; macOS only in Phase 1)")
   endif()
+endif()
+
+if(LAVANDA_BUILD_BENCHMARKS)
+  add_subdirectory(benchmarks)
 endif()
 
 # --- Installation / package config -----------------------------------------
