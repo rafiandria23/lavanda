@@ -58,6 +58,7 @@ add_executable(lavanda_integration_tests
   integration/device/default_output_device_test.cc
   integration/runtime/audio_runtime_integration_test.cc
   integration/runtime/audio_runtime_mixing_integration_test.cc
+  integration/runtime/audio_runtime_graph_integration_test.cc
 )
 target_link_libraries(lavanda_integration_tests PRIVATE
   lavanda::lavanda

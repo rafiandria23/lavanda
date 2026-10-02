@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <memory>
 
 #include "lavanda/graph/nodes/gain_node.h"
@@ -85,6 +86,8 @@ TEST(AudioRuntimeGraphTest,
   StatusOr<GraphPlanHandle> good = runtime.CompileAndStageGraph();
 
   ASSERT_TRUE(good.ok());
+  EXPECT_EQ(runtime.stats().graph_compilation_failures, 0u)
+      << "a successful compile must not be counted as a failure";
   ASSERT_TRUE(runtime.ActivateGraphPlan(good.value()).ok());
 
   ASSERT_TRUE(runtime.graph().RemoveNode(osc.value()).ok());

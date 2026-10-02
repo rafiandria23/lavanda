@@ -171,7 +171,7 @@ class AudioRuntime::Impl {
     StatusOr<GraphPlanHandle> handle_or =
         graph_plan_store_.BuildAndStage(graph_, max_frames_per_block_);
 
-    if (handle_or.ok()) {
+    if (!handle_or.ok()) {
       diagnostics_.RecordGraphCompilationFailure();
     }
 
