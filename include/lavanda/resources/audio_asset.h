@@ -10,6 +10,8 @@
 
 namespace lavanda {
 
+inline constexpr std::uint32_t kMaxAssetChannels = 2;
+
 class AudioAsset {
  public:
   static StatusOr<AudioAsset> Create(AudioBuffer samples,

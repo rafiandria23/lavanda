@@ -16,6 +16,11 @@ StatusOr<AudioAsset> AudioAsset::Create(AudioBuffer samples,
                   "AudioAsset must have at least one channel");
   }
 
+  if (samples.channel_count() > kMaxAssetChannels) {
+    return Status(ErrorCode::kUnsupportedFormat,
+                  "AudioAsset supports at most 2 channels");
+  }
+
   if (samples.frame_count() == 0) {
     return Status(ErrorCode::kInvalidArgument,
                   "AudioAsset must contain at least one frame");

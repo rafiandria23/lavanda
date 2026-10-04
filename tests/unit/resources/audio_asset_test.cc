@@ -74,6 +74,8 @@ TEST(AudioAssetTest, CreateRejectsInvalidInput) {
   EXPECT_FALSE(AudioAsset::Create(AudioBuffer(), 48000).ok());
   EXPECT_FALSE(AudioAsset::Create(AudioBuffer(0, 2), 48000).ok());
   EXPECT_FALSE(AudioAsset::Create(AudioBuffer(4, 0), 48000).ok());
+  EXPECT_FALSE(
+      AudioAsset::Create(AudioBuffer(4, kMaxAssetChannels + 1), 48000).ok());
 }
 
 TEST(AudioAssetTest, MovedAssetKeepsSamples) {

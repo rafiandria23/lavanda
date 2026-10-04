@@ -57,6 +57,8 @@ add_library(lavanda STATIC
   src/lavanda/graph/graph_executor.cc
   src/lavanda/graph/graph_node_handle.cc
   src/lavanda/resources/audio_asset.cc
+  src/lavanda/resources/decoder.cc
+  src/lavanda/resources/decoders/wav_decoder.cc
 )
 add_library(lavanda::lavanda ALIAS lavanda)
 

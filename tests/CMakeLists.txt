@@ -5,6 +5,21 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 find_package(Threads REQUIRED)
 
+set(LAVANDA_AUDIO_FIXTURE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/audio)
+set(LAVANDA_AUDIO_FIXTURE_SCRIPT ${LAVANDA_AUDIO_FIXTURE_DIR}/generate_fixtures.py)
+
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+  add_custom_target(lavanda_regenerate_audio_fixtures
+    COMMAND Python3::Interpreter ${LAVANDA_AUDIO_FIXTURE_SCRIPT}
+    COMMENT "Regenerating audio test fixtures"
+    VERBATIM
+  )
+else()
+  message(STATUS "Python3 not found: audio fixture regeneration and the "
+                 "AudioFixturesUpToDate check are disabled")
+endif()
+
 add_library(lavanda_test_support STATIC
   test_support/deterministic_signal.cc
   test_support/allocation_guard.cc
@@ -44,14 +59,17 @@ add_executable(lavanda_unit_tests
   unit/graph/graph_compiler_test.cc
   unit/graph/graph_plan_store_test.cc
   unit/graph/graph_executor_test.cc
-  unit/graph/graph_executor_test.cc
   unit/runtime/audio_runtime_graph_test.cc
   unit/resources/audio_asset_test.cc
+  unit/resources/wav_decoder_test.cc
 )
 target_link_libraries(lavanda_unit_tests PRIVATE
   lavanda::lavanda
   lavanda_test_support
   GTest::gtest_main
+)
+target_compile_definitions(lavanda_unit_tests PRIVATE
+  LAVANDA_FIXTURE_DIR="${LAVANDA_AUDIO_FIXTURE_DIR}"
 )
 lavanda_set_project_warnings(lavanda_unit_tests ${LAVANDA_WARNINGS_AS_ERRORS})
 
@@ -83,3 +101,9 @@ include(GoogleTest)
 gtest_discover_tests(lavanda_unit_tests)
 gtest_discover_tests(lavanda_integration_tests)
 gtest_discover_tests(lavanda_concurrency_tests)
+
+if(Python3_Interpreter_FOUND)
+  add_test(NAME AudioFixturesUpToDate
+    COMMAND Python3::Interpreter ${LAVANDA_AUDIO_FIXTURE_SCRIPT} --check
+  )
+endif()
