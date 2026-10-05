@@ -284,5 +284,63 @@ TEST(GraphAssetLifetimeTest, RetiredPlanKeepsItsPinUntilItsSlotIsReused) {
   EXPECT_EQ(f.store.pin_count(asset), 1u);
 }
 
+TEST(GraphAssetLifetimeTest, ReclaimRetiredPlansDestroysOnlyRetiredPlans) {
+  Fixture f;
+  const AudioAssetId asset = f.Load();
+
+  f.HoldBaselinePin(asset);
+
+  AudioGraph asset_graph;
+  BuildAssetGraph(asset_graph, asset, 1);
+
+  AudioGraph oscillator_graph;
+  BuildOscillatorGraph(oscillator_graph);
+
+  GraphPlanStore plans(kPlanSlots);
+
+  StatusOr<GraphPlanHandle> a =
+      plans.BuildAndStage(asset_graph, kBlock, f.context);
+
+  ASSERT_TRUE(a.ok());
+  ASSERT_TRUE(plans.TryActivate(a.value()));
+
+  StatusOr<GraphPlanHandle> staged =
+      plans.BuildAndStage(asset_graph, kBlock, f.context);
+
+  ASSERT_TRUE(staged.ok());
+
+  StatusOr<GraphPlanHandle> b = plans.BuildAndStage(oscillator_graph, kBlock);
+
+  ASSERT_TRUE(b.ok());
+  ASSERT_TRUE(plans.TryActivate(b.value()));
+
+  EXPECT_EQ(f.store.pin_count(asset), 3u);
+
+  EXPECT_EQ(plans.ReclaimRetiredPlans(), 1u);
+  EXPECT_EQ(f.store.pin_count(asset), 2u);
+
+  EXPECT_EQ(plans.ReclaimRetiredPlans(), 0u);
+}
+
+TEST(GraphAssetLifetimeTest, ReclaimRetiredPlansLeavesAnActivePlanAlone) {
+  Fixture f;
+  const AudioAssetId asset = f.Load();
+
+  f.HoldBaselinePin(asset);
+
+  AudioGraph graph;
+  BuildAssetGraph(graph, asset, 1);
+
+  GraphPlanStore plans(kPlanSlots);
+  StatusOr<GraphPlanHandle> a = plans.BuildAndStage(graph, kBlock, f.context);
+
+  ASSERT_TRUE(a.ok());
+  ASSERT_TRUE(plans.TryActivate(a.value()));
+
+  EXPECT_EQ(plans.ReclaimRetiredPlans(), 0u);
+  EXPECT_EQ(f.store.pin_count(asset), 2u);
+  EXPECT_TRUE(plans.ActivePlan() != nullptr);
+}
+
 }  // namespace
 }  // namespace lavanda

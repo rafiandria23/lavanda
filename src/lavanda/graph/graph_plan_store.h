@@ -42,6 +42,8 @@ class GraphPlanStore {
 
   bool ReleaseStagedPlan(GraphPlanHandle handle) noexcept;
 
+  std::size_t ReclaimRetiredPlans() noexcept;
+
   // --- Audio-thread only ----------------------------------------------
 
   bool TryActivate(GraphPlanHandle handle) noexcept;

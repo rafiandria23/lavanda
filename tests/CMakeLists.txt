@@ -72,6 +72,7 @@ add_executable(lavanda_unit_tests
   unit/graph/nodes/audio_asset_source_node_test.cc
   unit/graph/graph_asset_lifetime_test.cc
   unit/runtime/audio_runtime_asset_graph_test.cc
+  unit/runtime/audio_runtime_asset_lifetime_test.cc
 )
 target_link_libraries(lavanda_unit_tests PRIVATE
   lavanda::lavanda

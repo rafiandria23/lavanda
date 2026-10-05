@@ -63,6 +63,8 @@ class AudioRuntime {
 
   Status ReleaseAudioAsset(AudioAssetId id);
 
+  void ReclaimAssets();
+
  private:
   friend class Voice;
   friend class Bus;

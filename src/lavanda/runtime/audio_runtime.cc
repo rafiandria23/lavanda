@@ -186,6 +186,8 @@ class AudioRuntime::Impl {
   AudioGraph& graph() noexcept { return graph_; }
 
   StatusOr<GraphPlanHandle> CompileAndStageGraph() {
+    ReclaimAssets();
+
     GraphCompileContext context;
     context.resource_store = &resource_store_;
 
@@ -233,7 +235,13 @@ class AudioRuntime::Impl {
   }
 
   Status ReleaseAudioAsset(AudioAssetId id) {
-    return resource_store_.Release(id);
+    Status status = resource_store_.Release(id);
+
+    if (status.ok()) {
+      ReclaimAssets();
+    }
+
+    return status;
   }
 
   Status ValidateAssetForVoice(AudioAssetId id) const {
@@ -266,6 +274,11 @@ class AudioRuntime::Impl {
 
   bool IsVoicePlaying(VoiceId id) const noexcept {
     return voice_pool_.observed_state(id) == VoiceState::kPlaying;
+  }
+
+  void ReclaimAssets() {
+    graph_plan_store_.ReclaimRetiredPlans();
+    resource_store_.ReclaimRetired();
   }
 
  private:
@@ -616,5 +629,7 @@ StatusOr<AudioAssetInfo> AudioRuntime::GetAudioAssetInfo(
 Status AudioRuntime::ReleaseAudioAsset(AudioAssetId id) {
   return impl_->ReleaseAudioAsset(id);
 }
+
+void AudioRuntime::ReclaimAssets() { impl_->ReclaimAssets(); }
 
 }  // namespace lavanda

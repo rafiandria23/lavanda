@@ -93,6 +93,21 @@ bool GraphPlanStore::ReleaseStagedPlan(GraphPlanHandle handle) noexcept {
   return true;
 }
 
+std::size_t GraphPlanStore::ReclaimRetiredPlans() noexcept {
+  std::size_t reclaimed = 0;
+
+  for (Slot& slot : slots_) {
+    if (slot.state.load(std::memory_order_acquire) ==
+            GraphPlanSlotState::kFree &&
+        slot.plan != nullptr) {
+      slot.plan.reset();
+      ++reclaimed;
+    }
+  }
+
+  return reclaimed;
+}
+
 bool GraphPlanStore::TryActivate(GraphPlanHandle handle) noexcept {
   if (handle.slot_index >= slots_.size()) {
     return false;
