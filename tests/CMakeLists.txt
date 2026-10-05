@@ -66,6 +66,9 @@ add_executable(lavanda_unit_tests
   unit/resources/resource_store_test.cc
   unit/resources/resource_loader_test.cc
   unit/runtime/audio_runtime_assets_test.cc
+  unit/runtime/voice_pool_assets_test.cc
+  unit/runtime/stereo_balance_test.cc
+  unit/runtime/audio_runtime_asset_voices_test.cc
 )
 target_link_libraries(lavanda_unit_tests PRIVATE
   lavanda::lavanda

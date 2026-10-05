@@ -23,6 +23,8 @@ class Voice {
 
   Status Destroy();
 
+  bool IsPlaying() const noexcept;
+
   Status SetGain(float gain);
 
   Status SetPan(float pan);

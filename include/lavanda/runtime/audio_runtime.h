@@ -40,6 +40,8 @@ class AudioRuntime {
   RuntimeStats stats() const noexcept;
 
   StatusOr<Voice> CreateVoice();
+  StatusOr<Voice> CreateVoice(AudioAssetId asset);
+
   StatusOr<Bus> CreateBus();
   Bus MasterBus() noexcept;
 
@@ -66,6 +68,7 @@ class AudioRuntime {
 
   void ReleaseVoiceReservation(VoiceId id) noexcept;
   void ReleaseBusReservation(BusId id) noexcept;
+  bool IsVoicePlaying(VoiceId id) const noexcept;
 
   class Impl;
   std::unique_ptr<Impl> impl_;

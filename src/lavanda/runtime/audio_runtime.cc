@@ -25,6 +25,7 @@
 #include "lavanda/runtime/render_context.h"
 #include "lavanda/runtime/render_diagnostics.h"
 #include "lavanda/runtime/render_state.h"
+#include "lavanda/runtime/stereo_balance.h"
 #include "lavanda/runtime/voice_pool.h"
 
 namespace lavanda {
@@ -77,10 +78,12 @@ class AudioRuntime::Impl {
         command_queue_(config.command_queue_capacity),
         resource_store_(config.resource_config),
         resource_loader_(resource_store_, config.resource_config),
-        voice_pool_(config.max_voices),
+        voice_pool_(config.max_voices, &resource_store_),
         bus_system_(config.max_user_buses, config.max_frames_per_block),
         mix_scratch_(static_cast<std::uint32_t>(config.max_frames_per_block),
                      1),
+        stereo_scratch_(static_cast<std::uint32_t>(config.max_frames_per_block),
+                        2),
         graph_(config.graph_config),
         graph_plan_store_(config.max_graph_plans),
         max_frames_per_block_(
@@ -225,6 +228,38 @@ class AudioRuntime::Impl {
     return resource_store_.Release(id);
   }
 
+  Status ValidateAssetForVoice(AudioAssetId id) const {
+    if (!id.is_valid()) {
+      return Status(ErrorCode::kInvalidArgument, "invalid audio asset id");
+    }
+
+    StatusOr<AudioAssetInfo> info = resource_store_.GetInfo(id);
+
+    if (!info.ok()) {
+      return info.status();
+    }
+
+    StatusOr<std::uint32_t> rate = DeviceSampleRateHz();
+
+    if (!rate.ok()) {
+      return rate.status();
+    }
+
+    if (info.value().sample_rate_hz != rate.value()) {
+      return Status(ErrorCode::kInvalidArgument,
+                    "audio asset sample rate does not match the device rate");
+    }
+
+    return Status::Ok();
+  }
+
+  bool PinAsset(AudioAssetId id) { return resource_store_.Pin(id) != nullptr; }
+  void UnpinAsset(AudioAssetId id) noexcept { resource_store_.Unpin(id); }
+
+  bool IsVoicePlaying(VoiceId id) const noexcept {
+    return voice_pool_.observed_state(id) == VoiceState::kPlaying;
+  }
+
  private:
   void Render(AudioBufferView output) noexcept {
     if (!is_active_.load(std::memory_order_acquire)) {
@@ -305,6 +340,7 @@ class AudioRuntime::Impl {
     bus_system_.ClearActiveAccumulators(output.frame_count());
 
     AudioBufferView mono_scratch = mix_scratch_.View(output.frame_count());
+    AudioBufferView stereo_scratch = stereo_scratch_.View(output.frame_count());
     const double sample_rate_hz = device_->format().sample_rate_hz();
     const std::size_t voice_count = voice_pool_.capacity();
     std::uint32_t active_voice_count = 0;
@@ -316,16 +352,25 @@ class AudioRuntime::Impl {
 
       ++active_voice_count;
 
-      voice_pool_.RenderVoiceSource(i, mono_scratch, sample_rate_hz);
-
-      StereoGains gains =
-          EqualPowerPan(voice_pool_.pan(i), voice_pool_.gain(i));
       const std::size_t target_index =
           bus_system_.ResolveBusIndex(voice_pool_.target_bus(i));
       AudioBufferView bus_accumulator =
           bus_system_.MutableAccumulator(target_index, output.frame_count());
 
-      AccumulateMonoToStereo(bus_accumulator, mono_scratch, gains);
+      if (voice_pool_.source_channel_count(i) == 2) {
+        voice_pool_.RenderVoiceSource(i, stereo_scratch, sample_rate_hz);
+
+        AccumulateStereoWithBalance(
+            bus_accumulator, stereo_scratch,
+            StereoBalanceGains(voice_pool_.pan(i), voice_pool_.gain(i)));
+      } else {
+        voice_pool_.RenderVoiceSource(i, mono_scratch, sample_rate_hz);
+
+        StereoGains gains =
+            EqualPowerPan(voice_pool_.pan(i), voice_pool_.gain(i));
+
+        AccumulateMonoToStereo(bus_accumulator, mono_scratch, gains);
+      }
     }
 
     AudioBufferView master_accumulator =
@@ -384,6 +429,7 @@ class AudioRuntime::Impl {
   VoicePool voice_pool_;
   BusSystem bus_system_;
   AudioBuffer mix_scratch_;
+  AudioBuffer stereo_scratch_;
   AudioGraph graph_;
 
   GraphPlanStore graph_plan_store_;
@@ -432,6 +478,49 @@ StatusOr<Voice> AudioRuntime::CreateVoice() {
   }
 
   return Voice(this, id);
+}
+
+StatusOr<Voice> AudioRuntime::CreateVoice(AudioAssetId asset) {
+  Status check = impl_->ValidateAssetForVoice(asset);
+
+  if (!check.ok()) {
+    impl_->RecordVoiceCreationFailure();
+    return check;
+  }
+
+  StatusOr<VoiceId> id_or = impl_->ReserveVoice();
+
+  if (!id_or.ok()) {
+    impl_->RecordVoiceCreationFailure();
+    return id_or.status();
+  }
+
+  VoiceId id = id_or.value();
+
+  if (!impl_->PinAsset(asset)) {
+    impl_->ReleaseVoice(id);
+    impl_->RecordVoiceCreationFailure();
+
+    return Status(ErrorCode::kInvalidArgument,
+                  "audio asset is not available (stale or released)");
+  }
+
+  Status submit_status = Submit(
+      {.type = CommandType::kCreateVoice, .voice_id = id, .asset_id = asset});
+
+  if (!submit_status.ok()) {
+    impl_->UnpinAsset(asset);
+    impl_->ReleaseVoice(id);
+    impl_->RecordVoiceCreationFailure();
+
+    return submit_status;
+  }
+
+  return Voice(this, id);
+}
+
+bool AudioRuntime::IsVoicePlaying(VoiceId id) const noexcept {
+  return impl_->IsVoicePlaying(id);
 }
 
 StatusOr<Bus> AudioRuntime::CreateBus() {

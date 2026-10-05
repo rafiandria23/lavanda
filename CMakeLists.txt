@@ -54,7 +54,6 @@ add_library(lavanda STATIC
   src/lavanda/graph/graph_compiler.cc
   src/lavanda/graph/graph_plan_store.cc
   src/lavanda/graph/graph_executor.cc
-  src/lavanda/graph/graph_executor.cc
   src/lavanda/graph/graph_node_handle.cc
   src/lavanda/resources/audio_asset.cc
   src/lavanda/resources/decoder.cc

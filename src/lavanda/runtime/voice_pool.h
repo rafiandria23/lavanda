@@ -1,16 +1,21 @@
 #ifndef LAVANDA_RUNTIME_VOICE_POOL_H_
 #define LAVANDA_RUNTIME_VOICE_POOL_H_
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
 
 #include "lavanda/core/audio_buffer.h"
 #include "lavanda/core/status.h"
+#include "lavanda/resources/audio_asset_id.h"
 #include "lavanda/runtime/command.h"
 #include "lavanda/runtime/handles.h"
 
 namespace lavanda {
+
+class AudioAsset;
+class ResourceStore;
 
 enum class VoiceState : std::uint8_t {
   kInactive,
@@ -20,7 +25,8 @@ enum class VoiceState : std::uint8_t {
 
 class VoicePool {
  public:
-  explicit VoicePool(std::size_t capacity);
+  explicit VoicePool(std::size_t capacity,
+                     ResourceStore* resource_store = nullptr);
 
   VoicePool(const VoicePool&) = delete;
   VoicePool& operator=(const VoicePool&) = delete;
@@ -38,8 +44,12 @@ class VoicePool {
   float pan(std::size_t index) const noexcept;
   BusId target_bus(std::size_t index) const noexcept;
 
-  void RenderVoiceSource(std::size_t index, AudioBufferView mono_output,
+  std::uint32_t source_channel_count(std::size_t index) const noexcept;
+
+  void RenderVoiceSource(std::size_t index, AudioBufferView output,
                          double sample_rate_hz) noexcept;
+
+  VoiceState observed_state(VoiceId id) const noexcept;
 
  private:
   struct ControlSlot {
@@ -55,12 +65,23 @@ class VoicePool {
     float pan = 0.0f;
     BusId target_bus = kMasterBusId;
     double phase = 0.0;
+
+    bool asset_backed = false;
+    AudioAssetId asset_id;
+    const AudioAsset* asset = nullptr;
+    std::uint32_t position_frames = 0;
   };
 
   bool IsValidTarget(VoiceId id) const noexcept;
+  void Publish(std::size_t index) noexcept;
+  void ReleaseAsset(AudioSlot& slot) noexcept;
+  void RenderAssetSource(std::size_t index, AudioBufferView output) noexcept;
 
   std::vector<ControlSlot> control_slots_;  // control-thread only
   std::vector<AudioSlot> audio_slots_;      // audio-thread only
+  std::vector<std::atomic<std::uint64_t>>
+      published_;  // audio writes, any reads
+  ResourceStore* resource_store_;
 };
 
 }  // namespace lavanda

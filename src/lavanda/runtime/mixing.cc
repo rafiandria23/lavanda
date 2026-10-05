@@ -41,6 +41,10 @@ Status Voice::Destroy() {
   return status;
 }
 
+bool Voice::IsPlaying() const noexcept {
+  return is_valid() && runtime_->IsVoicePlaying(id_);
+}
+
 Status Voice::SetGain(float gain) {
   if (!is_valid()) {
     return Status(ErrorCode::kInvalidArgument, "Voice is not valid");
