@@ -5,6 +5,78 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Phase 5: Audio Resources, Assets, and Decoding
+
+#### Added
+
+- `AudioAssetId` / `AudioAssetInfo` (public): generation-checked asset
+  handle and metadata.
+- WAV decoder (1-2 channels, up to 768 kHz source rate) and a linear
+  resampler to the device rate. Assets are stored as immutable, interleaved
+  32-bit float data.
+- `ResourceStore` (internal): bounded, generation-checked slots with an
+  atomic pin count. The audio thread only resolves and unpins; memory is
+  freed on the control thread once an asset is Retiring with no pins.
+- `ResourceLoader` (internal): decode, resample, and insert, with limits on
+  asset count, total bytes, frames per asset, and file size.
+- `AudioRuntime` asset API: `LoadAudioAsset()`, `GetAudioAssetInfo()`,
+  `ReleaseAudioAsset()` (deferred release), `ReclaimAssets()`,
+  `CreateVoice(AudioAssetId)`, `AddAssetSourceNode()`.
+- Asset-backed voices: play once, `Start()` to replay, `Stop()` resets, state
+  published to the control side via `Voice::IsPlaying()`. Stereo assets use
+  a balance law (center is unity per channel) in `stereo_balance.h`.
+- `AudioAssetSourceNode` (public): graph node that plays an asset once per
+  plan activation. `AudioNode` gained `required_asset()` and `BindAsset()`;
+  `GraphCompileContext` carries the store and device rate into the compiler,
+  which pins reachable assets and fails the compile on an unavailable or
+  mismatched asset.
+- `AssetPins` (internal): move-only RAII pin holder owned by each
+  `GraphExecutionPlan`. `GraphPlanStore::ReclaimRetiredPlans()` destroys
+  retired plans on the control thread.
+- `Command::asset_id`, carried on `kCreateVoice`.
+- `RuntimeConfig::resource_config`; `RuntimeStats` fields
+  `resident_asset_count`, `retiring_asset_count`, `resident_asset_bytes`,
+  `asset_load_failures`.
+- Committed WAV test fixtures, a Python generator, and an
+  `AudioFixturesUpToDate` ctest that regenerates and compares them.
+- Tests: decoder, resampler, store, loader, voice-pool, runtime, node, graph
+  lifetime, and reclamation unit tests; real-time-safety tests under
+  `AllocationGuard` for asset voices and asset graphs (with a counter-test
+  showing loading *does* allocate, and a test that plays an asset after its
+  file is deleted); concurrency tests with a real render thread; a
+  hardware-gated integration test.
+- `examples/playback`.
+- `docs/architecture/resources_and_assets.md`.
+
+#### Changed
+
+- Public `Command` gained an `asset_id` field, after `plan_handle`;
+  designated initializers must follow that order.
+- `GraphCompiler::Compile()` and `GraphPlanStore::BuildAndStage()` take a
+  defaulted `GraphCompileContext`; existing call sites compile unchanged.
+- `CompileAndStageGraph()` and `ReleaseAudioAsset()` now reclaim retired
+  assets and plans on the control thread.
+
+#### Fixed
+
+- `RuntimeStats::command_failures` was not initialized.
+
+#### Verified
+
+- Debug (ASan + UBSan) and Release builds; the full test suite.
+- ThreadSanitizer on `lavanda_concurrency_tests`, including the asset voice
+  churn, release/reload, and plan-swap scenarios: no reports (macOS arm64,
+  RelWithDebInfo, `FakeAudioDevice` render thread).
+- Hardware-gated asset integration test and `examples/playback` against real
+  Core Audio output, including stereo balance.
+
+#### Scope notes
+
+- Streaming is deferred to Phase 8. Also not included: compressed codecs,
+  looping, pausing, seeking, anti-aliased resampling. Asset identity is by
+  path, not content. See `docs/architecture/resources_and_assets.md` for the
+  full list of known limitations.
+
 ### Phase 4: DSP Graph and Execution Engine
 
 #### Added

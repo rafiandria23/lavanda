@@ -5,9 +5,12 @@ established a platform-independent audio device interface plus a working
 Core Audio backend for macOS. Phase 2 built a real-time runtime on top of
 that boundary. Phase 3 added voices, mixing, and buses, letting an
 application create and independently control multiple simultaneous
-sounds. Phase 4 adds a DSP graph: nodes (oscillators, gains, filters,
+sounds. Phase 4 added a DSP graph: nodes (oscillators, gains, filters,
 delays, mixers, pans) wired into a graph on the control side, compiled to
-an immutable execution plan, and executed by the audio thread.
+an immutable execution plan, and executed by the audio thread. Phase 5
+adds audio assets: WAV files decoded once on the control side into
+immutable resident data, played by voices and graph nodes with no file
+I/O, decoding, or allocation on the audio thread.
 
 ```
 Application -> Lavanda Engine -> DSP/Graph/Runtime -> Audio Device
@@ -21,7 +24,10 @@ for the Phase 2 runtime,
 [`docs/architecture/voices_and_mixing.md`](docs/architecture/voices_and_mixing.md)
 for the Phase 3 voice/bus mixer,
 [`docs/architecture/dsp_graph.md`](docs/architecture/dsp_graph.md) for the
-Phase 4 DSP graph, and [`CHANGELOG.md`](CHANGELOG.md) for what's shipped.
+Phase 4 DSP graph,
+[`docs/architecture/resources_and_assets.md`](docs/architecture/resources_and_assets.md)
+for the Phase 5 asset system, and [`CHANGELOG.md`](CHANGELOG.md) for what's
+shipped.
 
 ## Current platform support
 
@@ -115,6 +121,41 @@ the full design -- mutable graph vs. immutable plan, the compiler, plan
 lifetime and activation, command ordering, and real-time safety
 verification. Try it with `examples/dsp_graph`.
 
+## Audio assets (Phase 5)
+
+Load a WAV file once, then play it from any number of voices or graph
+nodes. Decoding and resampling to the device rate happen on the control
+thread; the audio thread only reads immutable, resident samples:
+
+```cpp
+lavanda::AudioRuntime runtime(std::move(device));
+runtime.Start();  // loading needs an open device (it sets the target rate)
+
+lavanda::StatusOr<lavanda::AudioAssetId> asset =
+    runtime.LoadAudioAsset("sounds/chime.wav");
+
+// As a voice:
+lavanda::StatusOr<lavanda::Voice> voice = runtime.CreateVoice(asset.value());
+voice.value().SetGain(0.5f);
+voice.value().SetPan(-0.3f);  // balance for stereo assets
+voice.value().Start();        // plays once; Start() again to replay
+
+// Or as a graph node:
+auto source = runtime.AddAssetSourceNode(asset.value());
+// ... connect source -> gain -> pan -> output, then compile and activate
+
+// Release is deferred: playback that already holds the asset keeps going,
+// and memory is freed once the last voice or plan lets go.
+runtime.ReleaseAudioAsset(asset.value());
+```
+
+Assets are 1 or 2 channel WAV files, identified by path, stored in a
+bounded, generation-checked store. Asset voices and asset nodes play once;
+there is no loop or pause yet, and streaming is deferred to Phase 8. See
+[`docs/architecture/resources_and_assets.md`](docs/architecture/resources_and_assets.md)
+for the lifetime protocol, the stereo balance law, resampler limits, and
+real-time safety verification. Try it with `examples/playback`.
+
 ## Build requirements
 
 - CMake >= 3.24
@@ -164,22 +205,26 @@ working build directory the way `cmake --build --target clean` does.
 
 ### Running the hardware-dependent integration tests
 
-Four integration tests exercise real hardware end to end -- the Phase 1
+Five integration tests exercise real hardware end to end -- the Phase 1
 device lifecycle, the Phase 2 runtime driving playback through
 `Submit()`, the Phase 3 voice/bus mixer's full lifecycle checklist
 (multiple voices, gain/pan changes, bus routing, stop/destroy/recreate
 with stale-handle verification), and the Phase 4 DSP graph (linear graph
 with live parameter changes, multi-source replacement, a stateful delay
 sweep, and a deliberately broken graph that must leave the playing plan
-untouched). All are opt-in, since CI runners aren't guaranteed to have an
-accessible audio output device, and because nobody wants audio I/O firing
-as a side effect of an ordinary `ctest` run:
+untouched), and the Phase 5 asset system (mono and stereo asset voices
+with live balance changes and a replay, then an asset node in a graph that
+is released while playing and freed when its plan is replaced). The asset
+test writes its own one-second WAV files, so it needs no fixtures. All are
+opt-in, since CI runners aren't guaranteed to have an accessible audio
+output device, and because nobody wants audio I/O firing as a side effect
+of an ordinary `ctest` run:
 
 ```sh
-LAVANDA_RUN_HARDWARE_TESTS=1 ctest --preset debug -R "DefaultOutputDevice|AudioRuntimeIntegration|AudioRuntimeMixingIntegration|AudioRuntimeGraphIntegration"
+LAVANDA_RUN_HARDWARE_TESTS=1 ctest --preset debug -R "DefaultOutputDevice|AudioRuntimeIntegration|AudioRuntimeMixingIntegration|AudioRuntimeGraphIntegration|AudioRuntimeAssetIntegration"
 ```
 
-Without that environment variable, all four skip themselves rather than
+Without that environment variable, all five skip themselves rather than
 failing.
 
 ### Benchmarks
@@ -237,6 +282,17 @@ compiles and activates it, changes parameters live, shows a deliberately
 broken graph being rejected while the previous plan keeps playing, then
 replaces the graph by inserting a delay -- the Phase 4 demonstration.
 
+```sh
+./build/debug/examples/playback/playback path/to/sound.wav --gain 0.5 --pan -0.3
+```
+
+Loads a 1 or 2 channel WAV file (up to two minutes), plays it once through
+an asset voice, and shuts down cleanly -- the Phase 5 demonstration.
+`--gain` and `--pan` are optional; `--pan` acts as balance for stereo
+files, and values outside -1..1 are clamped. The files under
+`tests/fixtures/audio/` are decoder test vectors only a few frames long, so
+use your own audio to hear something.
+
 ## Project layout
 
 ```
@@ -246,25 +302,34 @@ src/lavanda/          Implementation
   runtime/               Real-time runtime internals (Phase 2),
                          voice/bus/mixer internals (Phase 3)
   graph/                 Graph compiler, execution plan, plan store,
-                         executor, node implementations (Phase 4)
+                         executor, node implementations (Phase 4),
+                         asset pins and the asset source node (Phase 5)
+  resources/             WAV decoding, resampling, asset store and loader
+                         (Phase 5)
 include/lavanda/graph/ Public graph API, including built-in nodes
-tests/                Unit, concurrency, and integration tests
+include/lavanda/resources/  Public asset types (Phase 5)
+tests/                Unit, concurrency, and integration tests;
+                       tests/fixtures/audio holds the WAV test vectors
 benchmarks/            graph_benchmark (Phase 4, opt-in)
 examples/              device_probe (Phase 1), runtime_demo (Phase 2),
-                       mixing (Phase 3), dsp_graph (Phase 4)
+                       mixing (Phase 3), dsp_graph (Phase 4),
+                       playback (Phase 5)
 docs/architecture/    Design documentation
 ```
 
 ## Current project phase
 
-**Phase 4 of the planned build-out** (a DSP graph and execution engine,
-built on Phase 2's runtime and Phase 3's mixer). Still explicitly out of
-scope: crossfading or state migration between graph plans, parameter
-smoothing, higher-order filters and effects, spatial audio, an
-asset/resource manager, streaming, MIDI, plugins, and a sample-accurate
+**Phase 5 of the planned build-out** (audio resources, assets, and
+decoding, built on Phase 3's voices and Phase 4's graph). Still explicitly
+out of scope: streaming (deferred to Phase 8), compressed codecs, looping,
+pausing and seeking, anti-aliased resampling, crossfading or state
+migration between graph plans, parameter smoothing, higher-order filters
+and effects, spatial audio, MIDI, plugins, and a sample-accurate
 scheduler. See
+[`docs/architecture/resources_and_assets.md`](docs/architecture/resources_and_assets.md#out-of-scope)
+and
 [`docs/architecture/dsp_graph.md`](docs/architecture/dsp_graph.md#out-of-scope)
-for the full list.
+for the full lists.
 
 ## License
 
