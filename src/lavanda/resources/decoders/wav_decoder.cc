@@ -20,7 +20,6 @@ constexpr std::size_t kExtensibleFmtSize = 40;
 constexpr std::uint16_t kTagPcm = 0x0001;
 constexpr std::uint16_t kTagFloat = 0x0003;
 constexpr std::uint16_t kTagExtensible = 0xFFFE;
-constexpr std::uint32_t kMaxSampleRateHz = 768000;
 
 std::uint16_t ReadU16(const std::uint8_t* p) noexcept {
   return static_cast<std::uint16_t>(p[0] | (p[1] << 8));
@@ -132,13 +131,18 @@ StatusOr<AudioAsset> DecodeWav(std::span<const std::uint8_t> bytes,
     return Status(ErrorCode::kUnsupportedFormat, "not a RIFF/WAVE file");
   }
 
-  const std::uint64_t riff_end = std::uint64_t{ReadU32(bytes.data() + 4)} + 8;
+  const std::size_t riff_size = ReadU32(bytes.data() + 4);
 
-  if (riff_end > bytes.size()) {
+  if (riff_size > bytes.size() - 8) {
+    return Status(ErrorCode::kInvalidArgument,
+                  "WAV file is truncated: RIFF size exceeds file size");
+  }
+
+  if (riff_size < 4) {
     return Status(ErrorCode::kInvalidArgument, "WAV RIFF size is too small");
   }
 
-  const auto end = static_cast<std::size_t>(riff_end);
+  const std::size_t end = riff_size + 8;
 
   std::optional<WavFormat> format;
   const std::uint8_t* data = nullptr;
@@ -201,7 +205,7 @@ StatusOr<AudioAsset> DecodeWav(std::span<const std::uint8_t> bytes,
                       " channels; only mono and stereo are supported");
   }
 
-  if (f.sample_rate_hz == 0 || f.sample_rate_hz > kMaxSampleRateHz) {
+  if (f.sample_rate_hz == 0 || f.sample_rate_hz > kMaxAssetSampleRateHz) {
     return Status(ErrorCode::kInvalidArgument,
                   "WAV sample rate " + std::to_string(f.sample_rate_hz) +
                       " Hz is out of range");

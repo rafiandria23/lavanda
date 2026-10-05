@@ -6,9 +6,9 @@ namespace lavanda {
 
 StatusOr<AudioAsset> AudioAsset::Create(AudioBuffer samples,
                                         std::uint32_t sample_rate_hz) {
-  if (sample_rate_hz == 0) {
+  if (sample_rate_hz == 0 || sample_rate_hz > kMaxAssetSampleRateHz) {
     return Status(ErrorCode::kInvalidArgument,
-                  "AudioAsset sample rate must be nonzero");
+                  "AudioAsset sample rate is out of range");
   }
 
   if (samples.channel_count() == 0) {

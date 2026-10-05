@@ -11,6 +11,7 @@
 namespace lavanda {
 
 inline constexpr std::uint32_t kMaxAssetChannels = 2;
+inline constexpr std::uint32_t kMaxAssetSampleRateHz = 768000;
 
 class AudioAsset {
  public:
