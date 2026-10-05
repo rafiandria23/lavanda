@@ -275,4 +275,14 @@ bool ResourceStore::Unpin(AudioAssetId id) noexcept {
   return true;
 }
 
+bool ResourceStore::HasFreeSlot() const noexcept {
+  for (const Slot& slot : slots_) {
+    if (slot.state == SlotState::kFree) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 }  // namespace lavanda

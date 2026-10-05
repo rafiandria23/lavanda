@@ -295,5 +295,25 @@ TEST(ResourceStoreTest, DestroyingTheStoreWithPinnedAssetsIsClean) {
   ASSERT_TRUE(store.Release(id).ok());
 }
 
+TEST(ResourceStoreTest, HasFreeSlotReflectsOccupancy) {
+  ResourceStore store(ConfigWith(1));
+
+  EXPECT_TRUE(store.HasFreeSlot());
+
+  const AudioAssetId id = InsertOk(store);
+
+  EXPECT_FALSE(store.HasFreeSlot());
+
+  ASSERT_TRUE(store.Release(id).ok());  // unpinned: reclaimed immediately
+  EXPECT_TRUE(store.HasFreeSlot());
+
+  const AudioAssetId pinned = InsertOk(store);
+
+  ASSERT_NE(store.Pin(pinned), nullptr);
+  ASSERT_TRUE(
+      store.Release(pinned).ok());  // retiring, still occupying the slot
+  EXPECT_FALSE(store.HasFreeSlot());
+}
+
 }  // namespace
 }  // namespace lavanda

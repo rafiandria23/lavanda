@@ -64,6 +64,7 @@ add_executable(lavanda_unit_tests
   unit/resources/wav_decoder_test.cc
   unit/resources/resampler_test.cc
   unit/resources/resource_store_test.cc
+  unit/resources/resource_loader_test.cc
 )
 target_link_libraries(lavanda_unit_tests PRIVATE
   lavanda::lavanda

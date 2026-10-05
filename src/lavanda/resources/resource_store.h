@@ -49,6 +49,8 @@ class ResourceStore {
   std::uint64_t total_bytes() const noexcept { return total_bytes_; }
   std::uint32_t pin_count(AudioAssetId id) const noexcept;
 
+  bool HasFreeSlot() const noexcept;
+
   // ---- audio thread (and control thread) ----------------------------------
 
   const AudioAsset* ResolveForAudio(AudioAssetId id) const noexcept;
