@@ -26,6 +26,7 @@
 #include "lavanda/resources/audio_asset.h"
 #include "lavanda/resources/audio_asset_id.h"
 #include "lavanda/resources/audio_asset_info.h"
+#include "lavanda/resources/resource_config.h"
 #include "lavanda/runtime/audio_runtime.h"
 #include "lavanda/runtime/command.h"
 #include "lavanda/runtime/handles.h"

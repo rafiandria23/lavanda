@@ -60,6 +60,7 @@ add_library(lavanda STATIC
   src/lavanda/resources/decoder.cc
   src/lavanda/resources/decoders/wav_decoder.cc
   src/lavanda/resources/resampler.cc
+  src/lavanda/resources/resource_store.cc
 )
 add_library(lavanda::lavanda ALIAS lavanda)
 
