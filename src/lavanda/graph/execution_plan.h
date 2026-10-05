@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "lavanda/core/audio_buffer.h"
+#include "lavanda/graph/asset_pins.h"
 #include "lavanda/graph/node.h"
 #include "lavanda/graph/node_id.h"
 
@@ -26,7 +27,8 @@ class GraphExecutionPlan {
                      std::vector<AudioBuffer> buffers,
                      std::uint32_t output_buffer_index,
                      std::uint32_t output_channel_count,
-                     std::uint32_t max_frames_per_block);
+                     std::uint32_t max_frames_per_block,
+                     AssetPins pins = AssetPins());
 
   GraphExecutionPlan(const GraphExecutionPlan&) = delete;
   GraphExecutionPlan& operator=(const GraphExecutionPlan&) = delete;
@@ -57,8 +59,10 @@ class GraphExecutionPlan {
   std::uint32_t buffer_count() const noexcept {
     return static_cast<std::uint32_t>(buffers_.size());
   }
+  std::size_t pinned_asset_count() const noexcept { return pins_.count(); }
 
  private:
+  AssetPins pins_;
   std::vector<Step> steps_;
   std::vector<NodeId> step_source_ids_;
   std::vector<AudioBuffer> buffers_;

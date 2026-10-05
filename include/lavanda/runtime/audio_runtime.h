@@ -47,6 +47,8 @@ class AudioRuntime {
 
   AudioGraph& graph() noexcept;
 
+  StatusOr<NodeId> AddAssetSourceNode(AudioAssetId asset);
+
   GraphNodeHandle GetGraphNode(NodeId id) noexcept;
 
   StatusOr<GraphPlanHandle> CompileAndStageGraph();

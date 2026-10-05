@@ -10,6 +10,7 @@
 
 #include "lavanda/graph/graph_executor.h"
 #include "lavanda/graph/graph_plan_store.h"
+#include "lavanda/graph/nodes/audio_asset_source_node.h"
 #include "lavanda/graph/nodes/delay_node.h"
 #include "lavanda/graph/nodes/gain_node.h"
 #include "lavanda/graph/nodes/one_pole_high_pass_node.h"
@@ -185,8 +186,15 @@ class AudioRuntime::Impl {
   AudioGraph& graph() noexcept { return graph_; }
 
   StatusOr<GraphPlanHandle> CompileAndStageGraph() {
+    GraphCompileContext context;
+    context.resource_store = &resource_store_;
+
+    StatusOr<std::uint32_t> rate = DeviceSampleRateHz();
+
+    context.sample_rate_hz = rate.ok() ? rate.value() : 0;
+
     StatusOr<GraphPlanHandle> handle_or =
-        graph_plan_store_.BuildAndStage(graph_, max_frames_per_block_);
+        graph_plan_store_.BuildAndStage(graph_, max_frames_per_block_, context);
 
     if (!handle_or.ok()) {
       diagnostics_.RecordGraphCompilationFailure();
@@ -573,6 +581,17 @@ Status AudioRuntime::ActivateGraphPlan(GraphPlanHandle handle) {
   }
 
   return status;
+}
+
+StatusOr<NodeId> AudioRuntime::AddAssetSourceNode(AudioAssetId asset) {
+  StatusOr<AudioAssetInfo> info = impl_->GetAudioAssetInfo(asset);
+
+  if (!info.ok()) {
+    return info.status();
+  }
+
+  return impl_->graph().AddNode(std::make_unique<AudioAssetSourceNode>(
+      asset, info.value().channel_count));
 }
 
 Status AudioRuntime::ReleaseStagedGraphPlan(GraphPlanHandle handle) {

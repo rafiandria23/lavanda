@@ -10,6 +10,7 @@
 #include "lavanda/core/status.h"
 #include "lavanda/graph/execution_plan.h"
 #include "lavanda/graph/graph.h"
+#include "lavanda/graph/graph_compile_context.h"
 #include "lavanda/graph/graph_plan_handle.h"
 
 namespace lavanda {
@@ -33,8 +34,9 @@ class GraphPlanStore {
 
   // --- Control-thread only -------------------------------------------
 
-  StatusOr<GraphPlanHandle> BuildAndStage(const AudioGraph& graph,
-                                          std::uint32_t max_frames_per_block);
+  StatusOr<GraphPlanHandle> BuildAndStage(
+      const AudioGraph& graph, std::uint32_t max_frames_per_block,
+      const GraphCompileContext& context = GraphCompileContext());
 
   void MarkActivationSubmitted(GraphPlanHandle handle) noexcept;
 

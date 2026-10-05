@@ -8,16 +8,59 @@
 #include <utility>
 #include <vector>
 
+#include "lavanda/graph/asset_pins.h"
+#include "lavanda/resources/audio_asset.h"
+
 namespace lavanda {
 
 namespace {
 
 bool ByIndex(const NodeId& a, const NodeId& b) { return a.index < b.index; }
 
+Status BindRequiredAsset(AudioNode& node, AudioAssetId id,
+                         const GraphCompileContext& context, AssetPins& pins) {
+  if (context.resource_store == nullptr) {
+    return Status(ErrorCode::kInvalidArgument,
+                  "the graph uses an audio asset but no resource store was "
+                  "provided to the compiler");
+  }
+
+  if (context.sample_rate_hz == 0) {
+    return Status(ErrorCode::kNotOpen,
+                  "audio asset nodes can only be compiled while the device "
+                  "is open (after Start())");
+  }
+
+  const AudioAsset* asset = pins.Pin(id);
+
+  if (asset == nullptr) {
+    return Status(ErrorCode::kInvalidArgument,
+                  "a node refers to an audio asset that is not available "
+                  "(unknown, stale or released)");
+  }
+
+  if (asset->channel_count() != node.output_channel_count()) {
+    return Status(ErrorCode::kInvalidArgument,
+                  "an audio asset node's channel count does not match its "
+                  "asset");
+  }
+
+  if (asset->sample_rate_hz() != context.sample_rate_hz) {
+    return Status(ErrorCode::kInvalidArgument,
+                  "an audio asset's sample rate does not match the device "
+                  "rate");
+  }
+
+  node.BindAsset(asset);
+
+  return Status::Ok();
+}
+
 }  // namespace
 
 StatusOr<GraphExecutionPlan> GraphCompiler::Compile(
-    const AudioGraph& graph, std::uint32_t max_frames_per_block) {
+    const AudioGraph& graph, std::uint32_t max_frames_per_block,
+    const GraphCompileContext& context) {
   const NodeId output = graph.output();
 
   if (!output.is_valid() || !graph.IsValidNode(output)) {
@@ -180,6 +223,8 @@ StatusOr<GraphExecutionPlan> GraphCompiler::Compile(
         static_cast<std::uint32_t>(consumers[id.index].size());
   }
 
+  AssetPins pins(context.resource_store);
+
   std::unordered_map<std::uint32_t, std::uint32_t> node_output_slot;
   std::vector<GraphExecutionPlan::Step> steps;
 
@@ -192,6 +237,17 @@ StatusOr<GraphExecutionPlan> GraphCompiler::Compile(
 
     step.node = source_node->Clone();
     step.input_count = source_node->expected_input_count();
+
+    const AudioAssetId required_asset = step.node->required_asset();
+
+    if (required_asset.is_valid()) {
+      Status bound =
+          BindRequiredAsset(*step.node, required_asset, context, pins);
+
+      if (!bound.ok()) {
+        return bound;
+      }
+    }
 
     for (const Connection& connection : graph.connections()) {
       if (connection.destination_node != id) {
@@ -242,7 +298,8 @@ StatusOr<GraphExecutionPlan> GraphCompiler::Compile(
 
   return GraphExecutionPlan(std::move(steps), std::move(order),
                             std::move(buffers), output_buffer_index,
-                            output_channel_count, max_frames_per_block);
+                            output_channel_count, max_frames_per_block,
+                            std::move(pins));
 }
 
 }  // namespace lavanda

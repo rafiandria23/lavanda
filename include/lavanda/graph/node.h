@@ -6,8 +6,11 @@
 #include <memory>
 
 #include "lavanda/core/audio_buffer.h"
+#include "lavanda/resources/audio_asset_id.h"
 
 namespace lavanda {
+
+class AudioAsset;
 
 inline constexpr std::size_t kMaxNodeInputs = 8;
 
@@ -34,6 +37,11 @@ class AudioNode {
   virtual std::uint32_t expected_input_count() const noexcept = 0;
 
   virtual std::unique_ptr<AudioNode> Clone() const = 0;
+
+  virtual AudioAssetId required_asset() const noexcept {
+    return AudioAssetId{};
+  }
+  virtual void BindAsset(const AudioAsset*) noexcept {}
 };
 
 }  // namespace lavanda

@@ -11,7 +11,8 @@ GraphPlanStore::GraphPlanStore(std::size_t capacity)
     : slots_(std::max<std::size_t>(capacity, 1)) {}
 
 StatusOr<GraphPlanHandle> GraphPlanStore::BuildAndStage(
-    const AudioGraph& graph, std::uint32_t max_frames_per_block) {
+    const AudioGraph& graph, std::uint32_t max_frames_per_block,
+    const GraphCompileContext& context) {
   std::size_t free_index = slots_.size();
 
   for (std::size_t i = 0; i < slots_.size(); ++i) {
@@ -28,7 +29,7 @@ StatusOr<GraphPlanHandle> GraphPlanStore::BuildAndStage(
   }
 
   StatusOr<GraphExecutionPlan> plan_or =
-      GraphCompiler::Compile(graph, max_frames_per_block);
+      GraphCompiler::Compile(graph, max_frames_per_block, context);
 
   if (!plan_or.ok()) {
     return plan_or.status();

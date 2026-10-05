@@ -10,8 +10,10 @@ GraphExecutionPlan::GraphExecutionPlan(std::vector<Step> steps,
                                        std::vector<AudioBuffer> buffers,
                                        std::uint32_t output_buffer_index,
                                        std::uint32_t output_channel_count,
-                                       std::uint32_t max_frames_per_block)
-    : steps_(std::move(steps)),
+                                       std::uint32_t max_frames_per_block,
+                                       AssetPins pins)
+    : pins_(std::move(pins)),
+      steps_(std::move(steps)),
       step_source_ids_(std::move(step_source_ids)),
       buffers_(std::move(buffers)),
       output_buffer_index_(output_buffer_index),
