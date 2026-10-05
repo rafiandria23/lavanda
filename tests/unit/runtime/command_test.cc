@@ -43,5 +43,13 @@ TEST(CommandTest, IsTriviallyCopyable) {
                 "CommandQueue's SPSC ring buffer");
 }
 
+TEST(CommandTest, AssetIdDefaultsToInvalidAndCommandStaysTriviallyCopyable) {
+  static_assert(std::is_trivially_copyable_v<Command>);
+
+  Command command;
+
+  EXPECT_FALSE(command.asset_id.is_valid());
+}
+
 }  // namespace
 }  // namespace lavanda

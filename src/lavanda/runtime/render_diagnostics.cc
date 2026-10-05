@@ -56,6 +56,10 @@ void RenderDiagnostics::RecordCommandFailure() noexcept {
   command_failures_.fetch_add(1, std::memory_order_relaxed);
 }
 
+void RenderDiagnostics::RecordAssetLoadFailure() noexcept {
+  asset_load_failures_.fetch_add(1, std::memory_order_relaxed);
+}
+
 RuntimeStats RenderDiagnostics::Snapshot() const noexcept {
   RuntimeStats stats;
 
@@ -84,6 +88,8 @@ RuntimeStats RenderDiagnostics::Snapshot() const noexcept {
   stats.active_graph_plan_generation =
       active_graph_plan_generation_.load(std::memory_order_relaxed);
   stats.command_failures = command_failures_.load(std::memory_order_relaxed);
+  stats.asset_load_failures =
+      asset_load_failures_.load(std::memory_order_relaxed);
 
   return stats;
 }

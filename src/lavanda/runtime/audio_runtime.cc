@@ -2,8 +2,10 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <memory>
+#include <string>
 #include <utility>
 
 #include "lavanda/graph/graph_executor.h"
@@ -14,6 +16,8 @@
 #include "lavanda/graph/nodes/one_pole_low_pass_node.h"
 #include "lavanda/graph/nodes/oscillator_node.h"
 #include "lavanda/graph/nodes/pan_node.h"
+#include "lavanda/resources/resource_loader.h"
+#include "lavanda/resources/resource_store.h"
 #include "lavanda/runtime/audio_clock.h"
 #include "lavanda/runtime/bus_system.h"
 #include "lavanda/runtime/command_queue.h"
@@ -71,6 +75,8 @@ class AudioRuntime::Impl {
   Impl(std::unique_ptr<AudioDevice> device, const RuntimeConfig& config)
       : device_(std::move(device)),
         command_queue_(config.command_queue_capacity),
+        resource_store_(config.resource_config),
+        resource_loader_(resource_store_, config.resource_config),
         voice_pool_(config.max_voices),
         bus_system_(config.max_user_buses, config.max_frames_per_block),
         mix_scratch_(static_cast<std::uint32_t>(config.max_frames_per_block),
@@ -152,7 +158,15 @@ class AudioRuntime::Impl {
   }
 
   bool is_running() const noexcept { return device_ && device_->is_running(); }
-  RuntimeStats stats() const noexcept { return diagnostics_.Snapshot(); }
+  RuntimeStats stats() const noexcept {
+    RuntimeStats snapshot = diagnostics_.Snapshot();
+
+    snapshot.resident_asset_count = resource_store_.resident_count();
+    snapshot.retiring_asset_count = resource_store_.retiring_count();
+    snapshot.resident_asset_bytes = resource_store_.total_bytes();
+
+    return snapshot;
+  }
 
   StatusOr<VoiceId> ReserveVoice() { return voice_pool_.ReserveSlot(); }
   void ReleaseVoice(VoiceId id) noexcept { voice_pool_.ReleaseSlot(id); }
@@ -178,12 +192,37 @@ class AudioRuntime::Impl {
     return handle_or;
   }
 
+  void MarkGraphActivationSubmitted(GraphPlanHandle handle) noexcept {
+    graph_plan_store_.MarkActivationSubmitted(handle);
+  }
+
   bool ReleaseStagedGraphPlan(GraphPlanHandle handle) noexcept {
     return graph_plan_store_.ReleaseStagedPlan(handle);
   }
 
-  void MarkGraphActivationSubmitted(GraphPlanHandle handle) noexcept {
-    graph_plan_store_.MarkActivationSubmitted(handle);
+  StatusOr<AudioAssetId> LoadAudioAsset(const std::string& path) {
+    StatusOr<std::uint32_t> rate = DeviceSampleRateHz();
+
+    if (!rate.ok()) {
+      diagnostics_.RecordAssetLoadFailure();
+      return rate.status();
+    }
+
+    StatusOr<AudioAssetId> id = resource_loader_.Load(path, rate.value());
+
+    if (!id.ok()) {
+      diagnostics_.RecordAssetLoadFailure();
+    }
+
+    return id;
+  }
+
+  StatusOr<AudioAssetInfo> GetAudioAssetInfo(AudioAssetId id) const {
+    return resource_store_.GetInfo(id);
+  }
+
+  Status ReleaseAudioAsset(AudioAssetId id) {
+    return resource_store_.Release(id);
   }
 
  private:
@@ -313,11 +352,35 @@ class AudioRuntime::Impl {
     diagnostics_.SetActiveCounts(active_voice_count, active_bus_count);
   }
 
+  StatusOr<std::uint32_t> DeviceSampleRateHz() const {
+    if (!device_ || !device_->is_open()) {
+      return Status(ErrorCode::kNotOpen,
+                    "audio assets can only be loaded while the device is open "
+                    "(after Start()): they are prepared at the device's "
+                    "sample rate");
+    }
+
+    const double rate = device_->format().sample_rate_hz();
+    const long rounded = std::lround(rate);
+
+    if (rounded < 1 || rounded > static_cast<long>(kMaxAssetSampleRateHz)) {
+      return Status(ErrorCode::kUnsupportedFormat,
+                    "device sample rate " + std::to_string(rate) +
+                        " Hz is outside the supported asset range");
+    }
+
+    return static_cast<std::uint32_t>(rounded);
+  }
+
   std::unique_ptr<AudioDevice> device_;
   CommandQueue command_queue_;
   RenderState render_state_;
   AudioClock clock_;
   RenderDiagnostics diagnostics_;
+
+  ResourceStore resource_store_;
+  ResourceLoader resource_loader_;
+
   VoicePool voice_pool_;
   BusSystem bus_system_;
   AudioBuffer mix_scratch_;
@@ -431,6 +494,19 @@ Status AudioRuntime::ReleaseStagedGraphPlan(GraphPlanHandle handle) {
   }
 
   return Status::Ok();
+}
+
+StatusOr<AudioAssetId> AudioRuntime::LoadAudioAsset(const std::string& path) {
+  return impl_->LoadAudioAsset(path);
+}
+
+StatusOr<AudioAssetInfo> AudioRuntime::GetAudioAssetInfo(
+    AudioAssetId id) const {
+  return impl_->GetAudioAssetInfo(id);
+}
+
+Status AudioRuntime::ReleaseAudioAsset(AudioAssetId id) {
+  return impl_->ReleaseAudioAsset(id);
 }
 
 }  // namespace lavanda

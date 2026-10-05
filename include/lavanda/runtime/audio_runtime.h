@@ -2,6 +2,7 @@
 #define LAVANDA_RUNTIME_AUDIO_RUNTIME_H_
 
 #include <memory>
+#include <string>
 
 #include "lavanda/core/status.h"
 #include "lavanda/device/audio_device.h"
@@ -9,6 +10,8 @@
 #include "lavanda/graph/graph.h"
 #include "lavanda/graph/graph_config.h"
 #include "lavanda/graph/graph_node_handle.h"
+#include "lavanda/resources/audio_asset_id.h"
+#include "lavanda/resources/audio_asset_info.h"
 #include "lavanda/runtime/command.h"
 #include "lavanda/runtime/mixing.h"
 #include "lavanda/runtime/runtime_config.h"
@@ -49,6 +52,12 @@ class AudioRuntime {
   Status ActivateGraphPlan(GraphPlanHandle handle);
 
   Status ReleaseStagedGraphPlan(GraphPlanHandle handle);
+
+  StatusOr<AudioAssetId> LoadAudioAsset(const std::string& path);
+
+  StatusOr<AudioAssetInfo> GetAudioAssetInfo(AudioAssetId id) const;
+
+  Status ReleaseAudioAsset(AudioAssetId id);
 
  private:
   friend class Voice;

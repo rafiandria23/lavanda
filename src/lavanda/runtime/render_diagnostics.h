@@ -30,7 +30,10 @@ class RenderDiagnostics {
   void RecordGraphCompilationFailure() noexcept;
   void RecordGraphActivation(std::uint32_t node_count,
                              std::uint32_t plan_generation) noexcept;
+
   void RecordCommandFailure() noexcept;
+
+  void RecordAssetLoadFailure() noexcept;
 
   RuntimeStats Snapshot() const noexcept;
 
@@ -49,6 +52,7 @@ class RenderDiagnostics {
   std::atomic<std::uint32_t> active_graph_node_count_{0};
   std::atomic<std::uint32_t> active_graph_plan_generation_{0};
   std::atomic<std::uint64_t> command_failures_{0};
+  std::atomic<std::uint64_t> asset_load_failures_{0};
 };
 
 }  // namespace lavanda

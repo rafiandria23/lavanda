@@ -4,6 +4,7 @@
 #include <cstddef>
 
 #include "lavanda/graph/graph_config.h"
+#include "lavanda/resources/resource_config.h"
 
 namespace lavanda {
 
@@ -20,6 +21,8 @@ struct RuntimeConfig {
 
   GraphConfig graph_config;
   std::size_t max_graph_plans = 4;
+
+  ResourceConfig resource_config;
 };
 
 }  // namespace lavanda

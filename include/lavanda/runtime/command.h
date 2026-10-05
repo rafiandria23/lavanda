@@ -5,6 +5,7 @@
 
 #include "lavanda/graph/graph_plan_handle.h"
 #include "lavanda/graph/node_id.h"
+#include "lavanda/resources/audio_asset_id.h"
 #include "lavanda/runtime/handles.h"
 
 namespace lavanda {
@@ -43,6 +44,7 @@ struct Command {
   BusId bus_id;
   NodeId node_id;
   GraphPlanHandle plan_handle;
+  AudioAssetId asset_id;
 };
 
 }  // namespace lavanda

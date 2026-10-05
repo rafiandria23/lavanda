@@ -1,6 +1,7 @@
 #ifndef LAVANDA_RUNTIME_RUNTIME_STATS_H_
 #define LAVANDA_RUNTIME_RUNTIME_STATS_H_
 
+#include <cstddef>
 #include <cstdint>
 
 namespace lavanda {
@@ -19,7 +20,11 @@ struct RuntimeStats {
   std::uint64_t graph_activation_count = 0;
   std::uint32_t active_graph_node_count = 0;
   std::uint32_t active_graph_plan_generation = 0;
-  std::uint64_t command_failures;
+  std::uint64_t command_failures = 0;
+  std::size_t resident_asset_count = 0;
+  std::size_t retiring_asset_count = 0;
+  std::uint64_t resident_asset_bytes = 0;
+  std::uint64_t asset_load_failures = 0;
 };
 
 }  // namespace lavanda
