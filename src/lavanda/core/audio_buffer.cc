@@ -42,4 +42,17 @@ void AudioBuffer::Clear() noexcept {
   std::fill(storage_.begin(), storage_.end(), Sample{0});
 }
 
+AudioBufferView AudioBufferView::SubView(
+    std::uint32_t frame_offset, std::uint32_t frame_count) const noexcept {
+  if (data_ == nullptr || frame_offset >= frame_count_) {
+    return AudioBufferView();
+  }
+
+  const std::uint32_t available = frame_count_ - frame_offset;
+
+  return AudioBufferView(
+      data_ + static_cast<std::size_t>(frame_offset) * channel_count_,
+      std::min(frame_count, available), channel_count_);
+}
+
 }  // namespace lavanda

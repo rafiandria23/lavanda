@@ -8,11 +8,15 @@ AudioClock::AudioClock(double sample_rate_hz) noexcept
     : sample_rate_hz_(sample_rate_hz) {}
 
 void AudioClock::Advance(std::uint32_t frame_count) noexcept {
-  current_frame_.fetch_add(frame_count, std::memory_order_relaxed);
+  current_frame_.fetch_add(frame_count, std::memory_order_release);
 }
 
 std::uint64_t AudioClock::current_frame() const noexcept {
   return current_frame_.load(std::memory_order_relaxed);
+}
+
+FramePosition AudioClock::position() const noexcept {
+  return FramePosition{current_frame_.load(std::memory_order_acquire)};
 }
 
 double AudioClock::ElapsedSeconds() const noexcept {

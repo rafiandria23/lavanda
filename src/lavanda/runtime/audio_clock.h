@@ -4,6 +4,8 @@
 #include <atomic>
 #include <cstdint>
 
+#include "lavanda/core/time.h"
+
 namespace lavanda {
 
 class AudioClock {
@@ -17,6 +19,8 @@ class AudioClock {
   void Advance(std::uint32_t frame_count) noexcept;
 
   std::uint64_t current_frame() const noexcept;
+
+  FramePosition position() const noexcept;
 
   double sample_rate_hz() const noexcept { return sample_rate_hz_; }
 

@@ -5,6 +5,7 @@
 #include <string>
 
 #include "lavanda/core/status.h"
+#include "lavanda/core/time.h"
 #include "lavanda/device/audio_device.h"
 #include "lavanda/device/device_config.h"
 #include "lavanda/graph/graph.h"
@@ -38,6 +39,8 @@ class AudioRuntime {
   Status Submit(const Command& command);
   bool is_running() const noexcept;
   RuntimeStats stats() const noexcept;
+
+  FramePosition frame_position() const noexcept;
 
   StatusOr<Voice> CreateVoice();
   StatusOr<Voice> CreateVoice(AudioAssetId asset);

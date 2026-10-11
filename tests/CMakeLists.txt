@@ -74,6 +74,9 @@ add_executable(lavanda_unit_tests
   unit/runtime/audio_runtime_asset_graph_test.cc
   unit/runtime/audio_runtime_asset_lifetime_test.cc
   unit/runtime/realtime_safety_assets_test.cc
+  unit/core/frame_position_test.cc
+  unit/core/audio_buffer_view_subview_test.cc
+  unit/runtime/runtime_frame_position_test.cc
 )
 target_link_libraries(lavanda_unit_tests PRIVATE
   lavanda::lavanda

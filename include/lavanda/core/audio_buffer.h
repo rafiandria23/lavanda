@@ -28,6 +28,9 @@ class AudioBufferView {
 
   void Clear() noexcept;
 
+  AudioBufferView SubView(std::uint32_t frame_offset,
+                          std::uint32_t frame_count) const noexcept;
+
   bool empty() const noexcept {
     return data_ == nullptr || frame_count_ == 0 || channel_count_ == 0;
   }

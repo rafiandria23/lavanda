@@ -172,6 +172,8 @@ class AudioRuntime::Impl {
     return snapshot;
   }
 
+  FramePosition frame_position() const noexcept { return clock_.position(); }
+
   StatusOr<VoiceId> ReserveVoice() { return voice_pool_.ReserveSlot(); }
   void ReleaseVoice(VoiceId id) noexcept { voice_pool_.ReleaseSlot(id); }
   StatusOr<BusId> ReserveBus() { return bus_system_.ReserveSlot(); }
@@ -478,6 +480,10 @@ Status AudioRuntime::Submit(const Command& command) {
 }
 bool AudioRuntime::is_running() const noexcept { return impl_->is_running(); }
 RuntimeStats AudioRuntime::stats() const noexcept { return impl_->stats(); }
+
+FramePosition AudioRuntime::frame_position() const noexcept {
+  return impl_->frame_position();
+}
 
 StatusOr<Voice> AudioRuntime::CreateVoice() {
   StatusOr<VoiceId> id_or = impl_->ReserveVoice();

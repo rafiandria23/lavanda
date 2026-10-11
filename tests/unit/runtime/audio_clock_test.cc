@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include "lavanda/core/time.h"
+
 namespace lavanda {
 namespace {
 
@@ -39,6 +41,36 @@ TEST(AudioClockTest, ZeroSampleRateGivesZeroElapsedSeconds) {
   clock.Advance(1000);
 
   EXPECT_DOUBLE_EQ(clock.ElapsedSeconds(), 0.0);
+}
+
+TEST(AudioClockTest, PositionStartsAtZero) {
+  AudioClock clock(48000.0);
+
+  EXPECT_EQ(ToInteger(clock.position()), 0u);
+}
+
+TEST(AudioClockTest, PositionTracksAdvancesOfDifferentSizes) {
+  AudioClock clock(48000.0);
+
+  clock.Advance(256);
+
+  EXPECT_EQ(ToInteger(clock.position()), 256u);
+
+  clock.Advance(1);
+
+  EXPECT_EQ(ToInteger(clock.position()), 257u);
+
+  clock.Advance(4096);
+
+  EXPECT_EQ(ToInteger(clock.position()), 4353u);
+}
+
+TEST(AudioClockTest, PositionAgreesWithCurrentFrame) {
+  AudioClock clock(48000.0);
+  clock.Advance(512);
+  clock.Advance(37);
+
+  EXPECT_EQ(ToInteger(clock.position()), clock.current_frame());
 }
 
 }  // namespace
