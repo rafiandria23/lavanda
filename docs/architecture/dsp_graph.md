@@ -434,11 +434,15 @@ control thread submits, one render thread consumes, and `Start` / `Stop` /
 rejections are retried (`RetryUntilOk`, `CompileWithRetry`) rather than
 treated as failures.
 
-ThreadSanitizer result: **[record the result of the TSan run here once
-confirmed]**
+ThreadSanitizer result: **clean.** `lavanda_concurrency_tests`, including
+these three tests, ran with no reports under `-fsanitize=thread` on macOS
+arm64 (`RelWithDebInfo`), recorded at Phase 5 completion. The render thread
+there is the `FakeAudioDevice` loop, not Core Audio's own callback thread.
 
 Run it with a TSan configure of the project and
-`lavanda_concurrency_tests`, as for Phase 2 and 3.
+`lavanda_concurrency_tests`, as for Phase 2 and 3. TSan cannot be combined
+with the AddressSanitizer used by the Debug preset, so use a separate build
+directory.
 
 ## Performance baseline
 

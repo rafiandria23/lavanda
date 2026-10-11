@@ -13,6 +13,7 @@ Streaming is **not** part of this phase. It is deferred to Phase 8; see
 - [Design summary](#design-summary)
 - [Public API](#public-api)
 - [Loading pipeline](#loading-pipeline)
+- [Decoder boundary](#decoder-boundary)
 - [Asset identity](#asset-identity)
 - [Resampling](#resampling)
 - [The asset store](#the-asset-store)
@@ -22,6 +23,7 @@ Streaming is **not** part of this phase. It is deferred to Phase 8; see
 - [Real-time safety](#real-time-safety)
 - [Verification](#verification)
 - [Known limitations](#known-limitations)
+- [Why streaming is deferred](#why-streaming-is-deferred)
 - [Out of scope](#out-of-scope)
 
 ## Design summary
@@ -59,7 +61,7 @@ All on `AudioRuntime` unless noted. Control-thread only.
 | Call | Behavior |
 | ---- | -------- |
 | `LoadAudioAsset(path)` | Decode, resample to the open device's rate, and store. Returns an `AudioAssetId`. Requires an open device. Loading a path that is already resident returns the existing id. |
-| `GetAudioAssetInfo(id)` | Metadata for a live asset. |
+| `GetAudioAssetInfo(id)` | Metadata for a live asset: `sample_rate_hz`, `channel_count`, `frame_count`, and `duration_seconds()`. The store holds only the prepared asset, so this describes the resident (resampled) data, not the file on disk. |
 | `ReleaseAudioAsset(id)` | Marks the asset Retiring. New pins and lookups are refused; memory is freed once the last pin is gone (see [Lifetime protocol](#lifetime-protocol)). |
 | `ReclaimAssets()` | Frees Retiring assets whose pins are zero and destroys retired graph plans. Also runs automatically at the reclaim points below. |
 | `CreateVoice(AudioAssetId)` | An asset-backed voice. The asset is validated and pinned before the create command is submitted. `CreateVoice()` with no asset still creates an oscillator voice. |
@@ -99,15 +101,46 @@ free of side effects. The asset counters are read from the store, so
 
 Format limits:
 
-- WAV only. Channels: 1 or 2. Maximum source sample rate: 768000 Hz.
-- [confirm: list the exact WAV encodings `wav_decoder.cc` accepts; the
-  committed fixtures cover 8-bit and 16-bit PCM.]
-- Samples are stored as **interleaved 32-bit float**, matching `AudioBuffer`.
-  [confirm: record this as the deliberate deviation from the spec's layout
-  wording.]
+- WAV only. Channels: 1 or 2. Source sample rate: 1 to 768000 Hz.
+- Supported encodings: integer PCM at 8 bits (unsigned), 16, 24, and 32 bits
+  (signed), and IEEE float at 32 bits. `WAVE_FORMAT_EXTENSIBLE` is accepted,
+  and the real encoding is read from its sub-format tag. Unknown chunks are
+  skipped, and odd-sized chunks are handled per the RIFF padding rule.
+- Rejected with a `Status`: truncated files, a `data` chunk that is not a
+  whole number of frames, a block alignment inconsistent with the channel
+  count and bit depth, a missing `fmt ` or `data` chunk, zero frames, and
+  float files containing NaN or infinity.
+- Samples are stored as **interleaved 32-bit float**. That is the layout of
+  the existing `AudioBuffer`. The Phase 5 spec names planar float as a strong
+  default only if it fits the existing buffer conventions, and it does not,
+  so the asset keeps one representation and every consumer reads it as-is.
+  Integer-to-float conversion and normalization happen once, at load.
 
 Every failure returns a `Status` and increments `asset_load_failures`.
 Nothing is left half-inserted: the slot is taken only at step 8.
+
+## Decoder boundary
+
+Decoding sits behind an internal decoder interface. Its single input is a
+file and its single output is *canonical decoded audio*: a channel count, a
+sample rate, and interleaved float frames. Everything downstream (resampling,
+the store, voices, graph nodes) sees only that representation and never a
+format.
+
+- The WAV/PCM decoder is the only implementation in Phase 5. It is
+  hand-written; Phase 5 adds **no third-party dependency**, and no decoder
+  type appears in a public header. Adding a codec later means adding a
+  decoder behind the same interface, not changing voices or the graph.
+- Malformed, truncated, or unsupported files fail with a `Status`. They never
+  crash, over-read, or insert a partial asset.
+- Failure classes map to `ErrorCode` as follows: a file that is not
+  RIFF/WAVE, more than two channels, or an unsupported encoding is
+  `kUnsupportedFormat`; a malformed or truncated file, an out-of-range sample
+  rate, an empty path, or an unresolvable path is `kInvalidArgument`; too many
+  frames, or a full store, is `kResourceExhausted`. The loader prefixes the
+  path to the decoder's message, so errors read `path: reason`.
+- The decoder, resampler, store, and loader are control-side code. None is
+  reachable from the render path.
 
 ## Asset identity
 
@@ -198,6 +231,15 @@ which hold pins into it, so members are declared in that order.
 
 The asset id travels on `kCreateVoice`; an invalid id means an oscillator
 voice. The audio thread resolves the id into a pointer once, at create time.
+
+Phase 3 oscillator voices are **kept**: `CreateVoice()` with no asset still
+creates one. That preserves the Phase 3 contract, its tests, and the
+`mixing` example. The asset-backed voice is the architectural source for new
+sound; the oscillator is a legacy and test source. This is a deliberate
+choice, and it is the one place Phase 5 does not remove a Phase 3 behavior.
+
+Many voices can share one asset. Each holds its own pin and its own position;
+the sample data is read-only and shared, never copied.
 
 Semantics:
 
@@ -298,10 +340,20 @@ Sanitizer and hardware runs:
   render thread). This does not cover Core Audio's own callback thread.
 - Real hardware: the integration test and `examples/playback`.
 
-[confirm: Release and Linux/GCC CI results before marking the phase done.]
+Clean Debug and Release builds and green CI on macOS and Linux/GCC were
+reported at Phase 5 completion.
 
 ## Known limitations
 
+- **Transient decode memory is bounded by file size, not by the asset
+  limits.** `max_file_bytes` caps the file, but the native frame count is not
+  capped before decoding (the loader passes no frame limit, because a file at
+  a high rate can legitimately shrink under resampling). An 8-bit file expands
+  fourfold into float, so a file at the 128 MiB default can briefly allocate
+  about 512 MiB before it is rejected for exceeding `max_frames_per_asset` or
+  the byte budget. The *resident* footprint is always within the configured
+  limits; only this transient peak is not. Lower `max_file_bytes` to tighten
+  it.
 - Linear resampler with no anti-aliasing.
 - No pause, loop, seek, or per-voice playback rate.
 - Identity is by path, not content (see [Asset identity](#asset-identity)).
@@ -315,6 +367,29 @@ Sanitizer and hardware runs:
   it. Assets are resampled once, at load. They are not re-resampled if the
   device is later reopened at a different rate (the graph compiler rejects an
   asset node whose asset rate does not match).
+
+## Why streaming is deferred
+
+Resident assets make the audio thread's job trivial: read-only data that
+cannot change or disappear while a pin is held, with no I/O by construction.
+Streaming breaks each of those properties at once:
+
+- A streamed voice does not read an immutable asset. It reads a moving window
+  fed by a disk-reader thread through a lock-free ring buffer, so the pin
+  model (one immutable object, freed when unpinned) does not describe it.
+- It needs a policy for underruns (the reader falls behind), for seeks and
+  prefetch, and for what a graph plan means when its source is a live buffer.
+- It adds a new thread with its own scheduling and shutdown ordering, which
+  deserves its own design and its own TSan story.
+- The "no I/O on the audio thread" argument is a structural property of
+  resident data; for streaming it becomes a runtime discipline that has to be
+  tested differently.
+
+Phase 5 therefore bounds capacity instead: explicit limits on asset count,
+total bytes, frames per asset, and file size, with anything beyond them
+rejected with a `Status`. That makes memory pressure a defined, documented
+condition without taking on streaming. Large-resource playback is the job of
+Phase 8, which can build on the pin and lifetime protocol described here.
 
 ## Out of scope
 

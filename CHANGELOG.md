@@ -74,8 +74,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Streaming is deferred to Phase 8. Also not included: compressed codecs,
   looping, pausing, seeking, anti-aliased resampling. Asset identity is by
-  path, not content. See `docs/architecture/resources_and_assets.md` for the
-  full list of known limitations.
+  path, not content. Decoding is bounded by file size, so the transient peak
+  while decoding a large 8-bit file can exceed the resident limits (the
+  resident footprint never does). See
+  `docs/architecture/resources_and_assets.md` for the full list of known
+  limitations.
+- Oscillator voices from Phase 3 are kept alongside asset voices.
 
 ### Phase 4: DSP Graph and Execution Engine
 

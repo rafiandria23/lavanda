@@ -164,6 +164,8 @@ real-time safety verification. Try it with `examples/playback`.
   parts)
 - macOS + the Core Audio / AudioToolbox / CoreFoundation system frameworks,
   to build and run the Core Audio backend and the examples
+- Python 3, only to run the `AudioFixturesUpToDate` test, which regenerates
+  the WAV test fixtures and checks that the committed copies match
 
 Lavanda has no third-party dependencies in the library itself. Tests use
 GoogleTest, fetched automatically via CMake's `FetchContent` if no
@@ -203,28 +205,46 @@ Removes `build/` entirely -- useful when switching CMake generators or
 recovering from a broken configure, since it doesn't rely on an already-
 working build directory the way `cmake --build --target clean` does.
 
+### Running ThreadSanitizer
+
+ThreadSanitizer cannot be combined with the AddressSanitizer that the debug
+preset enables, so it needs its own build directory:
+
+```sh
+cmake -S . -B build/tsan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer -g" \
+  -DLAVANDA_BUILD_COREAUDIO_BACKEND=ON
+cmake --build build/tsan --target lavanda_concurrency_tests
+ctest --test-dir build/tsan --output-on-failure -R "Concurrency"
+```
+
+The concurrency tests drive a real render thread against the control
+thread. The render thread there is a `FakeAudioDevice` loop, not Core
+Audio's own callback thread.
+
 ### Running the hardware-dependent integration tests
 
-Five integration tests exercise real hardware end to end -- the Phase 1
+Six integration tests exercise real hardware end to end -- the Phase 1
 device lifecycle, the Phase 2 runtime driving playback through
 `Submit()`, the Phase 3 voice/bus mixer's full lifecycle checklist
 (multiple voices, gain/pan changes, bus routing, stop/destroy/recreate
-with stale-handle verification), and the Phase 4 DSP graph (linear graph
+with stale-handle verification), the Phase 4 DSP graph (linear graph
 with live parameter changes, multi-source replacement, a stateful delay
 sweep, and a deliberately broken graph that must leave the playing plan
-untouched), and the Phase 5 asset system (mono and stereo asset voices
-with live balance changes and a replay, then an asset node in a graph that
-is released while playing and freed when its plan is replaced). The asset
-test writes its own one-second WAV files, so it needs no fixtures. All are
-opt-in, since CI runners aren't guaranteed to have an accessible audio
-output device, and because nobody wants audio I/O firing as a side effect
-of an ordinary `ctest` run:
+untouched), and two for the Phase 5 asset system: mono and stereo asset
+voices with live balance changes and a replay, then an asset node in a
+graph that is released while playing and freed when its plan is replaced;
+and three voices sharing one asset, followed by stale-id rejection and
+reuse of the only asset slot. The asset tests write their own one-second
+WAV files, so they need no fixtures. All are opt-in, since CI runners
+aren't guaranteed to have an accessible audio output device, and because
+nobody wants audio I/O firing as a side effect of an ordinary `ctest` run:
 
 ```sh
 LAVANDA_RUN_HARDWARE_TESTS=1 ctest --preset debug -R "DefaultOutputDevice|AudioRuntimeIntegration|AudioRuntimeMixingIntegration|AudioRuntimeGraphIntegration|AudioRuntimeAssetIntegration"
 ```
 
-Without that environment variable, all five skip themselves rather than
+Without that environment variable, all six skip themselves rather than
 failing.
 
 ### Benchmarks
@@ -286,10 +306,10 @@ replaces the graph by inserting a delay -- the Phase 4 demonstration.
 ./build/debug/examples/playback/playback path/to/sound.wav --gain 0.5 --pan -0.3
 ```
 
-Loads a 1 or 2 channel WAV file (up to two minutes), plays it once through
-an asset voice, and shuts down cleanly -- the Phase 5 demonstration.
-`--gain` and `--pan` are optional; `--pan` acts as balance for stereo
-files, and values outside -1..1 are clamped. The files under
+Loads a 1 or 2 channel WAV file (up to two minutes), prints its metadata,
+plays it once through an asset voice, and shuts down cleanly -- the Phase 5
+demonstration. `--gain` and `--pan` are optional; `--pan` acts as balance
+for stereo files, and values outside -1..1 are clamped. The files under
 `tests/fixtures/audio/` are decoder test vectors only a few frames long, so
 use your own audio to hear something.
 
