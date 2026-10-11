@@ -291,48 +291,74 @@ class AudioRuntime::Impl {
     }
 
     const auto render_start = std::chrono::steady_clock::now();
+    const double sample_rate_hz = device_->format().sample_rate_hz();
+    const std::uint64_t block_start_frame = clock_.current_frame();
 
+    DrainCommands();
+
+    RenderSegment(output, sample_rate_hz, block_start_frame);
+
+    clock_.Advance(output.frame_count());
+
+    const auto render_end = std::chrono::steady_clock::now();
+    const double duration_seconds =
+        std::chrono::duration<double>(render_end - render_start).count();
+
+    diagnostics_.RecordRender(duration_seconds, output.frame_count(),
+                              sample_rate_hz);
+  }
+
+  void DrainCommands() noexcept {
     Command command;
 
-    while (command_queue_.TryPop(command)) {
-      render_state_.ApplyCommand(command);
-      voice_pool_.ApplyCommand(command);
-      bus_system_.ApplyCommand(command);
+    for (std::size_t i = 0; i < command_queue_.capacity(); ++i) {
+      if (!command_queue_.TryPop(command)) {
+        break;
+      }
 
-      if (command.type == CommandType::kActivateGraphPlan) {
-        if (graph_plan_store_.TryActivate(command.plan_handle)) {
-          GraphExecutionPlan* activated = graph_plan_store_.ActivePlan();
+      ApplyCommand(command);
+    }
+  }
 
-          if (activated != nullptr) {
-            diagnostics_.RecordGraphActivation(
-                activated->step_count(), graph_plan_store_.ActiveGeneration());
-          }
+  void ApplyCommand(const Command& command) noexcept {
+    render_state_.ApplyCommand(command);
+    voice_pool_.ApplyCommand(command);
+    bus_system_.ApplyCommand(command);
+
+    if (command.type == CommandType::kActivateGraphPlan) {
+      if (graph_plan_store_.TryActivate(command.plan_handle)) {
+        GraphExecutionPlan* activated = graph_plan_store_.ActivePlan();
+
+        if (activated != nullptr) {
+          diagnostics_.RecordGraphActivation(
+              activated->step_count(), graph_plan_store_.ActiveGeneration());
         }
-      } else {
-        GraphExecutionPlan* active_plan = graph_plan_store_.ActivePlan();
+      }
+    } else {
+      GraphExecutionPlan* active_plan = graph_plan_store_.ActivePlan();
 
-        if (active_plan != nullptr) {
-          const std::uint32_t step_index =
-              active_plan->FindStepIndexForNode(command.node_id);
+      if (active_plan != nullptr) {
+        const std::uint32_t step_index =
+            active_plan->FindStepIndexForNode(command.node_id);
 
-          if (step_index < active_plan->step_count()) {
-            ApplyNodeParameterCommand(
-                active_plan->steps()[step_index].node.get(), command.type,
-                command.value);
-          }
+        if (step_index < active_plan->step_count()) {
+          ApplyNodeParameterCommand(active_plan->steps()[step_index].node.get(),
+                                    command.type, command.value);
         }
       }
     }
+  }
 
+  void RenderSegment(AudioBufferView output, double sample_rate_hz,
+                     std::uint64_t start_frame) noexcept {
     RenderContext context;
 
     context.output = output;
-    context.sample_rate_hz = device_->format().sample_rate_hz();
-    context.clock_frame = clock_.current_frame();
+    context.sample_rate_hz = sample_rate_hz;
+    context.clock_frame = start_frame;
     context.render_state = &render_state_;
 
     context.render_state->Render(context.output, context.sample_rate_hz);
-    clock_.Advance(output.frame_count());
 
     RenderVoicesAndBuses(output);
 
@@ -342,13 +368,6 @@ class AudioRuntime::Impl {
       GraphExecutor::Render(*active_plan, output, output.frame_count(),
                             context.sample_rate_hz, context.clock_frame);
     }
-
-    const auto render_end = std::chrono::steady_clock::now();
-    const double duration_seconds =
-        std::chrono::duration<double>(render_end - render_start).count();
-
-    diagnostics_.RecordRender(duration_seconds, output.frame_count(),
-                              context.sample_rate_hz);
   }
 
   void RenderVoicesAndBuses(AudioBufferView output) noexcept {
