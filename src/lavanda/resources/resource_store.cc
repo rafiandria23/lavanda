@@ -83,7 +83,7 @@ StatusOr<AudioAssetId> ResourceStore::Insert(AudioAsset asset,
     if (!key.empty()) {
       key_to_index_.emplace(key, slot_index);
     }
-  } catch (const std::bad_alloc) {
+  } catch (const std::bad_alloc&) {
     return Status(ErrorCode::kResourceExhausted,
                   "out of memory while registering asset");
   }
