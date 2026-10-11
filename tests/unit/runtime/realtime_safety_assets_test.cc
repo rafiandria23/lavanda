@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "lavanda/graph/nodes/output_node.h"
 #include "lavanda/graph/nodes/pan_node.h"
@@ -297,6 +298,53 @@ TEST_F(AssetRealtimeSafetyTest, LoadingAnAssetAllocatesOnTheControlSide) {
   }
 
   EXPECT_GT(control_side_allocations, 0u);
+}
+
+TEST_F(AssetRealtimeSafetyTest, ManyVoicesSharingOneAssetDoNotAllocate) {
+  AudioAssetId asset = Load("mono_pcm16.wav");
+  std::vector<Voice> voices;
+
+  for (int i = 0; i < 4; ++i) {
+    Voice voice = MakeAssetVoice(asset);
+
+    ASSERT_TRUE(voice.SetGain(0.2f).ok());
+    ASSERT_TRUE(voice.SetPan(-0.6f + 0.4f * static_cast<float>(i)).ok());
+
+    voices.push_back(voice);
+  }
+
+  std::size_t allocations = 0;
+  bool heard = false;
+
+  ASSERT_TRUE(voices[0].Start().ok());
+  ASSERT_TRUE(voices[1].Start().ok());
+  ASSERT_TRUE(RenderGuarded(1, allocations, heard));
+  ASSERT_TRUE(voices[2].Start().ok());
+  ASSERT_TRUE(voices[3].Start().ok());
+  ASSERT_TRUE(RenderGuarded(kBlocks, allocations, heard));
+
+  EXPECT_EQ(allocations, 0u);
+  EXPECT_TRUE(heard);
+
+  for (Voice& voice : voices) {
+    EXPECT_FALSE(voice.IsPlaying());
+  }
+
+  for (Voice& voice : voices) {
+    ASSERT_TRUE(voice.Destroy().ok());
+  }
+
+  ASSERT_TRUE(runtime_->ReleaseAudioAsset(asset).ok());
+  ASSERT_TRUE(RenderGuarded(1, allocations, heard));
+
+  EXPECT_EQ(allocations, 0u);
+
+  runtime_->ReclaimAssets();
+
+  const RuntimeStats stats = runtime_->stats();
+
+  EXPECT_EQ(stats.resident_asset_count, 0u);
+  EXPECT_EQ(stats.retiring_asset_count, 0u);
 }
 
 }  // namespace

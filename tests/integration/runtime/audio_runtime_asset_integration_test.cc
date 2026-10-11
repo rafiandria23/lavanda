@@ -171,6 +171,18 @@ TEST(AudioRuntimeAssetIntegrationTest, AssetPlaybackAgainstRealHardware) {
 
   EXPECT_EQ(runtime.stats().resident_asset_count, 2u);
 
+  StatusOr<AudioAssetInfo> mono_info = runtime.GetAudioAssetInfo(mono);
+  StatusOr<AudioAssetInfo> stereo_info = runtime.GetAudioAssetInfo(stereo);
+
+  ASSERT_TRUE(mono_info.ok());
+  ASSERT_TRUE(stereo_info.ok());
+
+  EXPECT_EQ(mono_info.value().channel_count, 1u);
+  EXPECT_EQ(stereo_info.value().channel_count, 2u);
+  EXPECT_GT(mono_info.value().sample_rate_hz, 0u);
+  EXPECT_NEAR(mono_info.value().duration_seconds(), 1.0, 0.01);
+  EXPECT_NEAR(stereo_info.value().duration_seconds(), 1.0, 0.01);
+
   // --- Stage A: mono asset voice plays to the end --------------------------
 
   StatusOr<Voice> mono_voice_or = runtime.CreateVoice(mono);
@@ -280,6 +292,113 @@ TEST(AudioRuntimeAssetIntegrationTest, AssetPlaybackAgainstRealHardware) {
 
   EXPECT_TRUE(runtime.Shutdown().ok());
   EXPECT_FALSE(runtime.is_running());
+}
+
+TEST(AudioRuntimeAssetIntegrationTest,
+     SharedAssetStaleIdAndSlotReuseAgainstRealHardware) {
+  if (!HardwareTestsRequested()) {
+    GTEST_SKIP() << "Set LAVANDA_RUN_HARDWARE_TESTS=1 to run this against "
+                    "real hardware.";
+  }
+
+  TempFile file_a("lavanda_hw_shared_a.wav");
+  TempFile file_b("lavanda_hw_shared_b.wav");
+
+  ASSERT_TRUE(WriteSineWav(file_a.path(), 44100, 1.0, {440.0}));
+  ASSERT_TRUE(WriteSineWav(file_b.path(), 44100, 1.0, {660.0}));
+
+  StatusOr<std::unique_ptr<AudioDevice>> device_or =
+      CreateDefaultOutputDevice();
+
+  ASSERT_TRUE(device_or.ok()) << device_or.status().message();
+
+  RuntimeConfig config;
+
+  config.resource_config.max_assets = 1;
+
+  AudioRuntime runtime(std::move(device_or.value()), config);
+
+  ASSERT_TRUE(runtime.Start().ok());
+
+  StatusOr<AudioAssetId> a_or = runtime.LoadAudioAsset(file_a.path().string());
+
+  ASSERT_TRUE(a_or.ok()) << a_or.status().message();
+
+  AudioAssetId id_a = a_or.value();
+
+  EXPECT_TRUE(runtime.GetAudioAssetInfo(id_a).ok());
+
+  std::vector<Voice> voices;
+  const float pans[] = {0.0f, -0.7f, 0.7f};
+
+  for (float pan : pans) {
+    StatusOr<Voice> voice_or = runtime.CreateVoice(id_a);
+
+    ASSERT_TRUE(voice_or.ok());
+
+    Voice voice = voice_or.value();
+
+    ASSERT_TRUE(voice.SetGain(0.3f).ok());
+    ASSERT_TRUE(voice.SetPan(pan).ok());
+
+    voices.push_back(voice);
+  }
+
+  for (Voice& voice : voices) {
+    ASSERT_TRUE(voice.Start().ok());
+
+    SleepMs(250);
+  }
+
+  SleepMs(1000);
+
+  for (Voice& voice : voices) {
+    EXPECT_FALSE(voice.IsPlaying());
+    ASSERT_TRUE(voice.Destroy().ok());
+  }
+
+  SleepMs(200);
+
+  ASSERT_TRUE(runtime.ReleaseAudioAsset(id_a).ok());
+
+  RuntimeStats stats = runtime.stats();
+
+  EXPECT_EQ(stats.resident_asset_count, 0u);
+  EXPECT_EQ(stats.retiring_asset_count, 0u);
+
+  EXPECT_FALSE(runtime.GetAudioAssetInfo(id_a).ok());
+  EXPECT_FALSE(runtime.CreateVoice(id_a).ok());
+
+  StatusOr<AudioAssetId> b_or = runtime.LoadAudioAsset(file_b.path().string());
+
+  ASSERT_TRUE(b_or.ok()) << b_or.status().message();
+
+  AudioAssetId id_b = b_or.value();
+
+  EXPECT_TRUE(runtime.GetAudioAssetInfo(id_b).ok());
+
+  EXPECT_FALSE(runtime.GetAudioAssetInfo(id_a).ok());
+  EXPECT_FALSE(runtime.CreateVoice(id_a).ok());
+
+  StatusOr<Voice> b_voice_or = runtime.CreateVoice(id_b);
+
+  ASSERT_TRUE(b_voice_or.ok());
+
+  Voice b_voice = b_voice_or.value();
+
+  ASSERT_TRUE(b_voice.SetGain(0.3f).ok());
+  ASSERT_TRUE(b_voice.Start().ok());
+
+  SleepMs(1300);
+
+  EXPECT_FALSE(b_voice.IsPlaying());
+
+  ASSERT_TRUE(b_voice.Destroy().ok());
+
+  SleepMs(200);
+
+  EXPECT_TRUE(runtime.ReleaseAudioAsset(id_b).ok());
+  EXPECT_TRUE(runtime.Shutdown().ok());
 }
 
 }  // namespace

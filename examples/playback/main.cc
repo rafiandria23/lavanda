@@ -91,6 +91,19 @@ int main(int argc, char** argv) {
       "playback: loaded '%s' (%llu bytes resident).\n", path.c_str(),
       static_cast<unsigned long long>(runtime.stats().resident_asset_bytes));
 
+  lavanda::StatusOr<lavanda::AudioAssetInfo> info_or =
+      runtime.GetAudioAssetInfo(asset);
+
+  if (info_or.ok()) {
+    const lavanda::AudioAssetInfo& info = info_or.value();
+
+    std::printf("playback: %u Hz, %u channel(s), %u frames, %.3f s.\n",
+                static_cast<unsigned>(info.sample_rate_hz),
+                static_cast<unsigned>(info.channel_count),
+                static_cast<unsigned>(info.frame_count),
+                info.duration_seconds());
+  }
+
   lavanda::StatusOr<lavanda::Voice> voice_or = runtime.CreateVoice(asset);
 
   if (!voice_or.ok()) {
