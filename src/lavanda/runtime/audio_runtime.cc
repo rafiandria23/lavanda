@@ -1,5 +1,6 @@
 #include "lavanda/runtime/audio_runtime.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -63,7 +64,12 @@ void ApplyNodeParameterCommand(AudioNode* node, CommandType type,
       break;
     case CommandType::kSetNodeDelayFrames:
       if (auto* delay = dynamic_cast<DelayNode*>(node)) {
-        delay->SetDelayFrames(static_cast<std::uint32_t>(value));
+        const double requested = static_cast<double>(value);
+        const double upper = static_cast<double>(delay->max_delay_frames());
+        const double clamped =
+            requested > 0.0 ? std::min(requested, upper) : 0.0;
+
+        delay->SetDelayFrames(static_cast<std::uint32_t>(clamped));
       }
       break;
     default:

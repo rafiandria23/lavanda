@@ -80,6 +80,7 @@ add_executable(lavanda_unit_tests
   unit/runtime/event_scheduler_test.cc
   unit/runtime/scheduled_event_timing_test.cc
   unit/runtime/scheduling_api_test.cc
+  unit/runtime/scheduled_operations_test.cc
 )
 target_link_libraries(lavanda_unit_tests PRIVATE
   lavanda::lavanda
