@@ -37,6 +37,7 @@ class AudioRuntime {
   Status Shutdown();
 
   Status Submit(const Command& command);
+  Status ScheduleAtFrame(const Command& command, FramePosition target_frame);
   bool is_running() const noexcept;
   RuntimeStats stats() const noexcept;
 

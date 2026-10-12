@@ -22,6 +22,7 @@
 #include "lavanda/runtime/audio_clock.h"
 #include "lavanda/runtime/bus_system.h"
 #include "lavanda/runtime/command_queue.h"
+#include "lavanda/runtime/event_scheduler.h"
 #include "lavanda/runtime/mixer_math.h"
 #include "lavanda/runtime/render_context.h"
 #include "lavanda/runtime/render_diagnostics.h"
@@ -70,6 +71,25 @@ void ApplyNodeParameterCommand(AudioNode* node, CommandType type,
   }
 }
 
+bool IsSchedulable(CommandType type) noexcept {
+  switch (type) {
+    case CommandType::kStartVoice:
+    case CommandType::kStopVoice:
+    case CommandType::kSetVoiceGain:
+    case CommandType::kSetVoicePan:
+    case CommandType::kSetVoiceFrequency:
+    case CommandType::kSetBusGain:
+    case CommandType::kSetNodeGain:
+    case CommandType::kSetNodeFrequency:
+    case CommandType::kSetNodeCutoff:
+    case CommandType::kSetNodePan:
+    case CommandType::kSetNodeDelayFrames:
+      return true;
+    default:
+      return false;
+  }
+}
+
 }  // namespace
 
 class AudioRuntime::Impl {
@@ -77,6 +97,8 @@ class AudioRuntime::Impl {
   Impl(std::unique_ptr<AudioDevice> device, const RuntimeConfig& config)
       : device_(std::move(device)),
         command_queue_(config.command_queue_capacity),
+        event_reservations_(config.max_scheduled_events),
+        event_scheduler_(config.max_scheduled_events),
         resource_store_(config.resource_config),
         resource_loader_(resource_store_, config.resource_config),
         voice_pool_(config.max_voices, &resource_store_),
@@ -155,6 +177,35 @@ class AudioRuntime::Impl {
 
     if (!command_queue_.TryPush(command)) {
       diagnostics_.RecordCommandFailure();
+      return Status(ErrorCode::kQueueFull, "command queue is at capacity");
+    }
+
+    return Status::Ok();
+  }
+
+  Status ScheduleAtFrame(const Command& command, FramePosition target_frame) {
+    if (!device_) {
+      return Status(ErrorCode::kDeviceUnavailable,
+                    "AudioRuntime was constructed with a null device");
+    }
+
+    if (!IsSchedulable(command.type)) {
+      return Status(ErrorCode::kInvalidArgument,
+                    "this command type cannot be scheduled");
+    }
+
+    if (!event_reservations_.TryReserve()) {
+      return Status(ErrorCode::kResourceExhausted,
+                    "scheduled-event capacity is exhausted");
+    }
+
+    const QueuedCommand queued{
+        .command = command, .target_frame = target_frame, .scheduled = true};
+
+    if (!command_queue_.TryPush(queued)) {
+      event_reservations_.Release();
+      diagnostics_.RecordCommandFailure();
+
       return Status(ErrorCode::kQueueFull, "command queue is at capacity");
     }
 
@@ -295,8 +346,7 @@ class AudioRuntime::Impl {
     const std::uint64_t block_start_frame = clock_.current_frame();
 
     DrainCommands();
-
-    RenderSegment(output, sample_rate_hz, block_start_frame);
+    RenderBlock(output, sample_rate_hz, block_start_frame);
 
     clock_.Advance(output.frame_count());
 
@@ -309,14 +359,68 @@ class AudioRuntime::Impl {
   }
 
   void DrainCommands() noexcept {
-    Command command;
+    QueuedCommand queued;
 
     for (std::size_t i = 0; i < command_queue_.capacity(); ++i) {
-      if (!command_queue_.TryPop(command)) {
+      if (!command_queue_.TryPop(queued)) {
         break;
       }
 
-      ApplyCommand(command);
+      if (!queued.scheduled) {
+        ApplyCommand(queued.command);
+        continue;
+      }
+
+      if (!event_scheduler_.Push(queued.target_frame, queued.command)) {
+        event_reservations_.Release();
+        diagnostics_.RecordCommandFailure();
+      }
+    }
+  }
+
+  void DispatchDue(std::uint64_t frame) noexcept {
+    ScheduledEvent event;
+
+    while (event_scheduler_.PopDue(FramePosition{frame}, event)) {
+      ApplyCommand(event.command);
+      event_reservations_.Release();
+    }
+  }
+
+  void RenderBlock(AudioBufferView output, double sample_rate_hz,
+                   std::uint64_t block_start_frame) noexcept {
+    const std::uint32_t total_frames = output.frame_count();
+
+    DispatchDue(block_start_frame);
+
+    if (total_frames > max_frames_per_block_) {
+      RenderSegment(output, sample_rate_hz, block_start_frame);
+      return;
+    }
+
+    std::uint32_t rendered_frames = 0;
+
+    while (rendered_frames < total_frames) {
+      const std::uint64_t cursor = block_start_frame + rendered_frames;
+      std::uint32_t segment_frames = total_frames - rendered_frames;
+      FramePosition next_event = FramePosition{0};
+
+      if (event_scheduler_.PeekNextTarget(next_event)) {
+        const std::uint64_t frames_until_event = ToInteger(next_event) - cursor;
+
+        if (frames_until_event < segment_frames) {
+          segment_frames = static_cast<std::uint32_t>(frames_until_event);
+        }
+      }
+
+      RenderSegment(output.SubView(rendered_frames, segment_frames),
+                    sample_rate_hz, cursor);
+
+      rendered_frames += segment_frames;
+
+      if (rendered_frames < total_frames) {
+        DispatchDue(block_start_frame + rendered_frames);
+      }
     }
   }
 
@@ -464,6 +568,8 @@ class AudioRuntime::Impl {
   RenderState render_state_;
   AudioClock clock_;
   RenderDiagnostics diagnostics_;
+  EventReservations event_reservations_;
+  EventScheduler event_scheduler_;
 
   ResourceStore resource_store_;
   ResourceLoader resource_loader_;
@@ -496,6 +602,10 @@ Status AudioRuntime::Stop() { return impl_->Stop(); }
 Status AudioRuntime::Shutdown() { return impl_->Shutdown(); }
 Status AudioRuntime::Submit(const Command& command) {
   return impl_->Submit(command);
+}
+Status AudioRuntime::ScheduleAtFrame(const Command& command,
+                                     FramePosition target_frame) {
+  return impl_->ScheduleAtFrame(command, target_frame);
 }
 bool AudioRuntime::is_running() const noexcept { return impl_->is_running(); }
 RuntimeStats AudioRuntime::stats() const noexcept { return impl_->stats(); }

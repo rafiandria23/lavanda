@@ -21,6 +21,7 @@ struct RuntimeConfig {
 
   GraphConfig graph_config;
   std::size_t max_graph_plans = 4;
+  std::size_t max_scheduled_events = 256;
 
   ResourceConfig resource_config;
 };

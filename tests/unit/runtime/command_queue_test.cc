@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include "lavanda/core/time.h"
+
 namespace lavanda {
 namespace {
 
@@ -98,6 +100,74 @@ TEST(CommandQueueTest, WrapsAroundCorrectly) {
     ASSERT_TRUE(queue.TryPop(received));
     EXPECT_FLOAT_EQ(received.value, static_cast<float>(cycle));
   }
+}
+
+TEST(CommandQueueTest, PlainCommandsAreQueuedAsImmediate) {
+  CommandQueue queue(4);
+  Command command;
+
+  command.type = CommandType::kSetGain;
+
+  ASSERT_TRUE(queue.TryPush(command));
+
+  QueuedCommand received;
+
+  ASSERT_TRUE(queue.TryPop(received));
+  EXPECT_FALSE(received.scheduled);
+  EXPECT_EQ(received.command.type, CommandType::kSetGain);
+}
+
+TEST(CommandQueueTest, QueuedCommandCarriesSchedulingMetadata) {
+  CommandQueue queue(4);
+  QueuedCommand sent;
+
+  sent.command.type = CommandType::kSetVoiceGain;
+  sent.command.value = 0.5f;
+  sent.target_frame = FramePosition{12345};
+  sent.scheduled = true;
+
+  ASSERT_TRUE(queue.TryPush(sent));
+
+  QueuedCommand received;
+
+  ASSERT_TRUE(queue.TryPop(received));
+  EXPECT_TRUE(received.scheduled);
+  EXPECT_EQ(ToInteger(received.target_frame), 12345u);
+  EXPECT_FLOAT_EQ(received.command.value, 0.5f);
+}
+
+TEST(CommandQueueTest, ImmediateAndScheduledItemsShareOneFifoOrder) {
+  CommandQueue queue(4);
+  Command immediate;
+  QueuedCommand scheduled;
+
+  scheduled.scheduled = true;
+
+  immediate.value = 1.0f;
+
+  ASSERT_TRUE(queue.TryPush(immediate));
+
+  scheduled.command.value = 2.0f;
+
+  ASSERT_TRUE(queue.TryPush(scheduled));
+
+  immediate.value = 3.0f;
+
+  ASSERT_TRUE(queue.TryPush(immediate));
+
+  QueuedCommand received;
+
+  ASSERT_TRUE(queue.TryPop(received));
+  EXPECT_FLOAT_EQ(received.command.value, 1.0f);
+  EXPECT_FALSE(received.scheduled);
+
+  ASSERT_TRUE(queue.TryPop(received));
+  EXPECT_FLOAT_EQ(received.command.value, 2.0f);
+  EXPECT_TRUE(received.scheduled);
+
+  ASSERT_TRUE(queue.TryPop(received));
+  EXPECT_FLOAT_EQ(received.command.value, 3.0f);
+  EXPECT_FALSE(received.scheduled);
 }
 
 }  // namespace

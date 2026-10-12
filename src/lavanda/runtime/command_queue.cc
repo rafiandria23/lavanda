@@ -8,6 +8,10 @@ CommandQueue::CommandQueue(std::size_t capacity)
     : buffer_(std::max<std::size_t>(capacity, 1)) {}
 
 bool CommandQueue::TryPush(const Command& command) noexcept {
+  return TryPush(QueuedCommand{.command = command});
+}
+
+bool CommandQueue::TryPush(const QueuedCommand& queued) noexcept {
   const std::size_t head = head_.load(std::memory_order_relaxed);
   const std::size_t tail = tail_.load(std::memory_order_acquire);
 
@@ -15,13 +19,13 @@ bool CommandQueue::TryPush(const Command& command) noexcept {
     return false;
   }
 
-  buffer_[head % buffer_.size()] = command;
+  buffer_[head % buffer_.size()] = queued;
   head_.store(head + 1, std::memory_order_release);
 
   return true;
 }
 
-bool CommandQueue::TryPop(Command& out_command) noexcept {
+bool CommandQueue::TryPop(QueuedCommand& out_queued) noexcept {
   const std::size_t tail = tail_.load(std::memory_order_relaxed);
   const std::size_t head = head_.load(std::memory_order_acquire);
 
@@ -29,8 +33,20 @@ bool CommandQueue::TryPop(Command& out_command) noexcept {
     return false;
   }
 
-  out_command = buffer_[tail % buffer_.size()];
+  out_queued = buffer_[tail % buffer_.size()];
   tail_.store(tail + 1, std::memory_order_release);
+
+  return true;
+}
+
+bool CommandQueue::TryPop(Command& out_command) noexcept {
+  QueuedCommand queued;
+
+  if (!TryPop(queued)) {
+    return false;
+  }
+
+  out_command = queued.command;
 
   return true;
 }

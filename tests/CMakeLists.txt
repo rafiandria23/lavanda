@@ -78,6 +78,7 @@ add_executable(lavanda_unit_tests
   unit/core/audio_buffer_view_subview_test.cc
   unit/runtime/runtime_frame_position_test.cc
   unit/runtime/event_scheduler_test.cc
+  unit/runtime/scheduled_event_timing_test.cc
 )
 target_link_libraries(lavanda_unit_tests PRIVATE
   lavanda::lavanda
