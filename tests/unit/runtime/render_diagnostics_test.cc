@@ -152,5 +152,63 @@ TEST(RenderDiagnosticsTest, RecordGraphActivationUpdatesAllThreeFields) {
   EXPECT_EQ(stats.active_graph_plan_generation, 5u);
 }
 
+TEST(RenderDiagnosticsTest, SchedulingCountersStartAtZero) {
+  RenderDiagnostics diagnostics;
+  const RuntimeStats stats = diagnostics.Snapshot();
+
+  EXPECT_EQ(stats.scheduled_events_accepted, 0u);
+  EXPECT_EQ(stats.scheduled_events_executed, 0u);
+  EXPECT_EQ(stats.scheduled_events_late, 0u);
+  EXPECT_EQ(stats.scheduled_events_discarded, 0u);
+  EXPECT_EQ(stats.scheduled_events_dropped, 0u);
+  EXPECT_EQ(stats.scheduled_events_capacity_failures, 0u);
+  EXPECT_EQ(stats.scheduled_events_max_lateness_frames, 0u);
+}
+
+TEST(RenderDiagnosticsTest, OnTimeExecutionIsNotCountedLate) {
+  RenderDiagnostics diagnostics;
+  diagnostics.RecordScheduledEventExecuted(0);
+  diagnostics.RecordScheduledEventExecuted(0);
+
+  const RuntimeStats stats = diagnostics.Snapshot();
+
+  EXPECT_EQ(stats.scheduled_events_executed, 2u);
+  EXPECT_EQ(stats.scheduled_events_late, 0u);
+  EXPECT_EQ(stats.scheduled_events_max_lateness_frames, 0u);
+}
+
+TEST(RenderDiagnosticsTest, LateExecutionCountsAndTracksMaximumLateness) {
+  RenderDiagnostics diagnostics;
+
+  diagnostics.RecordScheduledEventExecuted(54);
+  diagnostics.RecordScheduledEventExecuted(28);
+  diagnostics.RecordScheduledEventExecuted(100);
+  diagnostics.RecordScheduledEventExecuted(0);
+
+  const RuntimeStats stats = diagnostics.Snapshot();
+
+  EXPECT_EQ(stats.scheduled_events_executed, 4u);
+  EXPECT_EQ(stats.scheduled_events_late, 3u);
+  EXPECT_EQ(stats.scheduled_events_max_lateness_frames, 100u);
+}
+
+TEST(RenderDiagnosticsTest, SchedulingCountersAreIndependent) {
+  RenderDiagnostics diagnostics;
+
+  diagnostics.RecordScheduledEventAccepted();
+  diagnostics.RecordScheduledEventAccepted();
+  diagnostics.RecordScheduledEventCapacityFailure();
+  diagnostics.RecordScheduledEventDiscarded();
+  diagnostics.RecordScheduledEventDropped();
+
+  const RuntimeStats stats = diagnostics.Snapshot();
+
+  EXPECT_EQ(stats.scheduled_events_accepted, 2u);
+  EXPECT_EQ(stats.scheduled_events_capacity_failures, 1u);
+  EXPECT_EQ(stats.scheduled_events_discarded, 1u);
+  EXPECT_EQ(stats.scheduled_events_dropped, 1u);
+  EXPECT_EQ(stats.scheduled_events_executed, 0u);
+}
+
 }  // namespace
 }  // namespace lavanda

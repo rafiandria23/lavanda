@@ -60,6 +60,39 @@ void RenderDiagnostics::RecordAssetLoadFailure() noexcept {
   asset_load_failures_.fetch_add(1, std::memory_order_relaxed);
 }
 
+void RenderDiagnostics::RecordScheduledEventAccepted() noexcept {
+  scheduled_events_accepted_.fetch_add(1, std::memory_order_relaxed);
+}
+
+void RenderDiagnostics::RecordScheduledEventCapacityFailure() noexcept {
+  scheduled_events_capacity_failures_.fetch_add(1, std::memory_order_relaxed);
+}
+
+void RenderDiagnostics::RecordScheduledEventExecuted(
+    std::uint64_t lateness_frames) noexcept {
+  scheduled_events_executed_.fetch_add(1, std::memory_order_relaxed);
+
+  if (lateness_frames == 0) {
+    return;
+  }
+
+  scheduled_events_late_.fetch_add(1, std::memory_order_relaxed);
+
+  if (lateness_frames >
+      scheduled_events_max_lateness_frames_.load(std::memory_order_relaxed)) {
+    scheduled_events_max_lateness_frames_.store(lateness_frames,
+                                                std::memory_order_relaxed);
+  }
+}
+
+void RenderDiagnostics::RecordScheduledEventDiscarded() noexcept {
+  scheduled_events_discarded_.fetch_add(1, std::memory_order_relaxed);
+}
+
+void RenderDiagnostics::RecordScheduledEventDropped() noexcept {
+  scheduled_events_dropped_.fetch_add(1, std::memory_order_relaxed);
+}
+
 RuntimeStats RenderDiagnostics::Snapshot() const noexcept {
   RuntimeStats stats;
 
@@ -90,6 +123,20 @@ RuntimeStats RenderDiagnostics::Snapshot() const noexcept {
   stats.command_failures = command_failures_.load(std::memory_order_relaxed);
   stats.asset_load_failures =
       asset_load_failures_.load(std::memory_order_relaxed);
+  stats.scheduled_events_accepted =
+      scheduled_events_accepted_.load(std::memory_order_relaxed);
+  stats.scheduled_events_executed =
+      scheduled_events_executed_.load(std::memory_order_relaxed);
+  stats.scheduled_events_late =
+      scheduled_events_late_.load(std::memory_order_relaxed);
+  stats.scheduled_events_discarded =
+      scheduled_events_discarded_.load(std::memory_order_relaxed);
+  stats.scheduled_events_dropped =
+      scheduled_events_dropped_.load(std::memory_order_relaxed);
+  stats.scheduled_events_capacity_failures =
+      scheduled_events_capacity_failures_.load(std::memory_order_relaxed);
+  stats.scheduled_events_max_lateness_frames =
+      scheduled_events_max_lateness_frames_.load(std::memory_order_relaxed);
 
   return stats;
 }

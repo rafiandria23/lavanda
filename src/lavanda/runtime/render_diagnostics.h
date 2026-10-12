@@ -35,6 +35,12 @@ class RenderDiagnostics {
 
   void RecordAssetLoadFailure() noexcept;
 
+  void RecordScheduledEventAccepted() noexcept;
+  void RecordScheduledEventCapacityFailure() noexcept;
+  void RecordScheduledEventExecuted(std::uint64_t lateness_frames) noexcept;
+  void RecordScheduledEventDiscarded() noexcept;
+  void RecordScheduledEventDropped() noexcept;
+
   RuntimeStats Snapshot() const noexcept;
 
  private:
@@ -53,6 +59,13 @@ class RenderDiagnostics {
   std::atomic<std::uint32_t> active_graph_plan_generation_{0};
   std::atomic<std::uint64_t> command_failures_{0};
   std::atomic<std::uint64_t> asset_load_failures_{0};
+  std::atomic<std::uint64_t> scheduled_events_accepted_{0};
+  std::atomic<std::uint64_t> scheduled_events_executed_{0};
+  std::atomic<std::uint64_t> scheduled_events_late_{0};
+  std::atomic<std::uint64_t> scheduled_events_discarded_{0};
+  std::atomic<std::uint64_t> scheduled_events_dropped_{0};
+  std::atomic<std::uint64_t> scheduled_events_capacity_failures_{0};
+  std::atomic<std::uint64_t> scheduled_events_max_lateness_frames_{0};
 };
 
 }  // namespace lavanda

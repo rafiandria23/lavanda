@@ -25,6 +25,14 @@ struct RuntimeStats {
   std::size_t retiring_asset_count = 0;
   std::uint64_t resident_asset_bytes = 0;
   std::uint64_t asset_load_failures = 0;
+  std::uint64_t scheduled_events_accepted = 0;
+  std::uint64_t scheduled_events_executed = 0;
+  std::uint64_t scheduled_events_late = 0;
+  std::uint64_t scheduled_events_discarded = 0;
+  std::uint64_t scheduled_events_dropped = 0;
+  std::uint64_t scheduled_events_capacity_failures = 0;
+  std::uint64_t scheduled_events_pending = 0;
+  std::uint64_t scheduled_events_max_lateness_frames = 0;
 };
 
 }  // namespace lavanda

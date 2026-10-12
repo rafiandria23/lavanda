@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <type_traits>
 #include <vector>
 
@@ -15,6 +16,7 @@ struct QueuedCommand {
   Command command;
   FramePosition target_frame = FramePosition{0};
   bool scheduled = false;
+  std::uint32_t epoch = 0;
 };
 
 static_assert(std::is_trivially_copyable_v<QueuedCommand>,

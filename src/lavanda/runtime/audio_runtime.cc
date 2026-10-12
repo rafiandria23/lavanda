@@ -71,23 +71,76 @@ void ApplyNodeParameterCommand(AudioNode* node, CommandType type,
   }
 }
 
-bool IsSchedulable(CommandType type) noexcept {
-  switch (type) {
+Status InvalidScheduledCommand(const char* message) {
+  return Status(ErrorCode::kInvalidArgument, message);
+}
+
+Status ValidateScheduledCommand(const Command& command) {
+  const float value = command.value;
+
+  switch (command.type) {
     case CommandType::kStartVoice:
     case CommandType::kStopVoice:
     case CommandType::kSetVoiceGain:
     case CommandType::kSetVoicePan:
     case CommandType::kSetVoiceFrequency:
+      if (!command.voice_id.is_valid()) {
+        return InvalidScheduledCommand(
+            "scheduled voice command needs a valid VoiceId");
+      }
+      break;
     case CommandType::kSetBusGain:
+      if (!command.bus_id.is_valid()) {
+        return InvalidScheduledCommand(
+            "scheduled bus command needs a valid BusId");
+      }
+      break;
     case CommandType::kSetNodeGain:
     case CommandType::kSetNodeFrequency:
     case CommandType::kSetNodeCutoff:
     case CommandType::kSetNodePan:
     case CommandType::kSetNodeDelayFrames:
-      return true;
+      if (!command.node_id.is_valid()) {
+        return InvalidScheduledCommand(
+            "scheduled node command needs a valid NodeId");
+      }
+      break;
     default:
-      return false;
+      return InvalidScheduledCommand("this command type cannot be scheduled");
   }
+
+  switch (command.type) {
+    case CommandType::kSetVoiceGain:
+    case CommandType::kSetBusGain:
+    case CommandType::kSetNodeGain:
+      if (!std::isfinite(value) || value < 0.0f) {
+        return InvalidScheduledCommand("gain must be finite and non-negative");
+      }
+      break;
+    case CommandType::kSetVoicePan:
+    case CommandType::kSetNodePan:
+      if (!std::isfinite(value)) {
+        return InvalidScheduledCommand("pan must be finite");
+      }
+      break;
+    case CommandType::kSetVoiceFrequency:
+    case CommandType::kSetNodeFrequency:
+    case CommandType::kSetNodeCutoff:
+      if (!std::isfinite(value) || value <= 0.0f) {
+        return InvalidScheduledCommand(
+            "frequency and cutoff must be finite and positive");
+      }
+      break;
+    case CommandType::kSetNodeDelayFrames:
+      if (!std::isfinite(value) || value < 0.0f) {
+        return InvalidScheduledCommand("delay must be finite and non-negative");
+      }
+      break;
+    default:
+      break;
+  }
+
+  return Status::Ok();
 }
 
 }  // namespace
@@ -166,6 +219,8 @@ class AudioRuntime::Impl {
     Status stop_status = device_->Stop();
     Status close_status = device_->Close();
 
+    session_epoch_.fetch_add(1, std::memory_order_release);
+
     return stop_status.ok() ? close_status : stop_status;
   }
 
@@ -189,18 +244,24 @@ class AudioRuntime::Impl {
                     "AudioRuntime was constructed with a null device");
     }
 
-    if (!IsSchedulable(command.type)) {
-      return Status(ErrorCode::kInvalidArgument,
-                    "this command type cannot be scheduled");
+    Status valid = ValidateScheduledCommand(command);
+
+    if (!valid.ok()) {
+      return valid;
     }
 
     if (!event_reservations_.TryReserve()) {
+      diagnostics_.RecordScheduledEventCapacityFailure();
+
       return Status(ErrorCode::kResourceExhausted,
                     "scheduled-event capacity is exhausted");
     }
 
     const QueuedCommand queued{
-        .command = command, .target_frame = target_frame, .scheduled = true};
+        .command = command,
+        .target_frame = target_frame,
+        .scheduled = true,
+        .epoch = session_epoch_.load(std::memory_order_relaxed)};
 
     if (!command_queue_.TryPush(queued)) {
       event_reservations_.Release();
@@ -208,6 +269,8 @@ class AudioRuntime::Impl {
 
       return Status(ErrorCode::kQueueFull, "command queue is at capacity");
     }
+
+    diagnostics_.RecordScheduledEventAccepted();
 
     return Status::Ok();
   }
@@ -219,6 +282,7 @@ class AudioRuntime::Impl {
     snapshot.resident_asset_count = resource_store_.resident_count();
     snapshot.retiring_asset_count = resource_store_.retiring_count();
     snapshot.resident_asset_bytes = resource_store_.total_bytes();
+    snapshot.scheduled_events_pending = event_reservations_.outstanding();
 
     return snapshot;
   }
@@ -358,7 +422,24 @@ class AudioRuntime::Impl {
                               sample_rate_hz);
   }
 
+  void AdoptEpoch(std::uint32_t epoch) noexcept {
+    if (epoch <= audio_epoch_) {
+      return;
+    }
+
+    ScheduledEvent stale;
+
+    while (event_scheduler_.PopDue(kMaxFramePosition, stale)) {
+      event_reservations_.Release();
+      diagnostics_.RecordScheduledEventDiscarded();
+    }
+
+    audio_epoch_ = epoch;
+  }
+
   void DrainCommands() noexcept {
+    AdoptEpoch(session_epoch_.load(std::memory_order_acquire));
+
     QueuedCommand queued;
 
     for (std::size_t i = 0; i < command_queue_.capacity(); ++i) {
@@ -371,9 +452,17 @@ class AudioRuntime::Impl {
         continue;
       }
 
+      AdoptEpoch(queued.epoch);
+
+      if (queued.epoch < audio_epoch_) {
+        event_reservations_.Release();
+        diagnostics_.RecordScheduledEventDiscarded();
+        continue;
+      }
+
       if (!event_scheduler_.Push(queued.target_frame, queued.command)) {
         event_reservations_.Release();
-        diagnostics_.RecordCommandFailure();
+        diagnostics_.RecordScheduledEventDropped();
       }
     }
   }
@@ -384,6 +473,8 @@ class AudioRuntime::Impl {
     while (event_scheduler_.PopDue(FramePosition{frame}, event)) {
       ApplyCommand(event.command);
       event_reservations_.Release();
+      diagnostics_.RecordScheduledEventExecuted(frame -
+                                                ToInteger(event.target_frame));
     }
   }
 
@@ -583,6 +674,9 @@ class AudioRuntime::Impl {
   GraphPlanStore graph_plan_store_;
   std::uint32_t max_frames_per_block_;
   std::atomic<bool> is_active_{false};
+
+  std::atomic<std::uint32_t> session_epoch_{0};
+  std::uint32_t audio_epoch_ = 0;
 };
 
 AudioRuntime::AudioRuntime(std::unique_ptr<AudioDevice> device,
