@@ -94,7 +94,8 @@ void VoicePool::ReleaseAsset(AudioSlot& slot) noexcept {
   slot.position_frames = 0;
 }
 
-void VoicePool::ApplyCommand(const Command& command) noexcept {
+void VoicePool::ApplyCommand(const Command& command,
+                             std::uint64_t frame) noexcept {
   switch (command.type) {
     case CommandType::kCreateVoice: {
       if (command.voice_id.index >= audio_slots_.size()) {
@@ -173,7 +174,17 @@ void VoicePool::ApplyCommand(const Command& command) noexcept {
         return;
       }
 
-      audio_slots_[command.voice_id.index].gain = command.value;
+      audio_slots_[command.voice_id.index].gain.Set(command.value);
+
+      break;
+    }
+    case CommandType::kRampVoiceGain: {
+      if (!IsValidTarget(command.voice_id)) {
+        return;
+      }
+
+      audio_slots_[command.voice_id.index].gain.Start(frame, command.value,
+                                                      command.duration_frames);
 
       break;
     }
@@ -220,6 +231,14 @@ bool VoicePool::is_active(std::size_t index) const noexcept {
 float VoicePool::gain(std::size_t index) const noexcept {
   if (index >= audio_slots_.size()) {
     return 0.0f;
+  }
+
+  return audio_slots_[index].gain.target();
+}
+
+GainRamp VoicePool::gain_ramp(std::size_t index) const noexcept {
+  if (index >= audio_slots_.size()) {
+    return GainRamp(0.0f);
   }
 
   return audio_slots_[index].gain;

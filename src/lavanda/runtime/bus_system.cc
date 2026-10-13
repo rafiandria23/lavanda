@@ -64,7 +64,8 @@ bool BusSystem::IsValidTarget(BusId id) const noexcept {
   return slot.active && slot.generation == id.generation;
 }
 
-void BusSystem::ApplyCommand(const Command& command) noexcept {
+void BusSystem::ApplyCommand(const Command& command,
+                             std::uint64_t frame) noexcept {
   switch (command.type) {
     case CommandType::kCreateBus: {
       if (command.bus_id.index == 0) {
@@ -79,7 +80,7 @@ void BusSystem::ApplyCommand(const Command& command) noexcept {
 
       slot.generation = command.bus_id.generation;
       slot.active = true;
-      slot.gain = 1.0f;
+      slot.gain.Set(1.0f);
 
       break;
     }
@@ -101,7 +102,17 @@ void BusSystem::ApplyCommand(const Command& command) noexcept {
         return;
       }
 
-      audio_slots_[command.bus_id.index].gain = command.value;
+      audio_slots_[command.bus_id.index].gain.Set(command.value);
+
+      break;
+    }
+    case CommandType::kRampBusGain: {
+      if (!IsValidTarget(command.bus_id)) {
+        return;
+      }
+
+      audio_slots_[command.bus_id.index].gain.Start(frame, command.value,
+                                                    command.duration_frames);
 
       break;
     }
@@ -121,6 +132,14 @@ bool BusSystem::is_active(std::size_t index) const noexcept {
 float BusSystem::gain(std::size_t index) const noexcept {
   if (index >= audio_slots_.size()) {
     return 1.0f;
+  }
+
+  return audio_slots_[index].gain.target();
+}
+
+GainRamp BusSystem::gain_ramp(std::size_t index) const noexcept {
+  if (index >= audio_slots_.size()) {
+    return GainRamp(1.0f);
   }
 
   return audio_slots_[index].gain;

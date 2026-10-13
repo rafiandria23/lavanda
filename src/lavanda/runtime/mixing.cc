@@ -59,6 +59,22 @@ Status Voice::SetGain(float gain) {
       {.type = CommandType::kSetVoiceGain, .value = gain, .voice_id = id_});
 }
 
+Status Voice::RampGain(float target_gain, std::uint32_t duration_frames) {
+  if (!is_valid()) {
+    return Status(ErrorCode::kInvalidArgument, "Voice is not valid");
+  }
+
+  if (!std::isfinite(target_gain) || target_gain < 0.0f) {
+    return Status(ErrorCode::kInvalidArgument,
+                  "voice gain must be finite and non-negative");
+  }
+
+  return runtime_->Submit({.type = CommandType::kRampVoiceGain,
+                           .value = target_gain,
+                           .voice_id = id_,
+                           .duration_frames = duration_frames});
+}
+
 Status Voice::SetPan(float pan) {
   if (!is_valid()) {
     return Status(ErrorCode::kInvalidArgument, "Voice is not valid");
@@ -133,6 +149,22 @@ Status Bus::SetGain(float gain) {
 
   return runtime_->Submit(
       {.type = CommandType::kSetBusGain, .value = gain, .bus_id = id_});
+}
+
+Status Bus::RampGain(float target_gain, std::uint32_t duration_frames) {
+  if (!is_valid()) {
+    return Status(ErrorCode::kInvalidArgument, "Bus is not valid");
+  }
+
+  if (!std::isfinite(target_gain) || target_gain < 0.0f) {
+    return Status(ErrorCode::kInvalidArgument,
+                  "bus gain must be finite and non-negative");
+  }
+
+  return runtime_->Submit({.type = CommandType::kRampBusGain,
+                           .value = target_gain,
+                           .bus_id = id_,
+                           .duration_frames = duration_frames});
 }
 
 }  // namespace lavanda

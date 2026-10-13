@@ -7,6 +7,7 @@
 #include <numbers>
 
 #include "lavanda/core/audio_buffer.h"
+#include "lavanda/runtime/gain_ramp.h"
 
 namespace lavanda {
 
@@ -40,6 +41,25 @@ inline void AccumulateStereoWithBalance(AudioBufferView destination,
   for (std::uint32_t frame = 0; frame < frames; ++frame) {
     destination(frame, 0) += source(frame, 0) * gains.left;
     destination(frame, 1) += source(frame, 1) * gains.right;
+  }
+}
+
+inline void AccumulateStereoWithBalanceRamped(
+    AudioBufferView destination, AudioBufferView source,
+    BalanceGains unit_gains, const GainRamp& ramp,
+    std::uint64_t first_frame) noexcept {
+  if (destination.channel_count() != 2 || source.channel_count() != 2) {
+    return;
+  }
+
+  const std::uint32_t frames =
+      std::min(destination.frame_count(), source.frame_count());
+
+  for (std::uint32_t frame = 0; frame < frames; ++frame) {
+    const float gain = ramp.ValueAt(first_frame + frame);
+
+    destination(frame, 0) += source(frame, 0) * (gain * unit_gains.left);
+    destination(frame, 1) += source(frame, 1) * (gain * unit_gains.right);
   }
 }
 

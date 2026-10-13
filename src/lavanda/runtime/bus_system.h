@@ -8,6 +8,7 @@
 #include "lavanda/core/audio_buffer.h"
 #include "lavanda/core/status.h"
 #include "lavanda/runtime/command.h"
+#include "lavanda/runtime/gain_ramp.h"
 #include "lavanda/runtime/handles.h"
 
 namespace lavanda {
@@ -31,10 +32,11 @@ class BusSystem {
 
   void ReleaseSlot(BusId id) noexcept;
 
-  void ApplyCommand(const Command& command) noexcept;
+  void ApplyCommand(const Command& command, std::uint64_t frame = 0) noexcept;
 
   bool is_active(std::size_t index) const noexcept;
   float gain(std::size_t index) const noexcept;
+  GainRamp gain_ramp(std::size_t index) const noexcept;
 
   std::size_t ResolveBusIndex(BusId id) const noexcept;
 
@@ -52,7 +54,7 @@ class BusSystem {
   struct AudioSlot {
     bool active = false;
     std::uint32_t generation = 0;
-    float gain = 1.0f;
+    GainRamp gain;
     AudioBuffer accumulator;
   };
 

@@ -85,6 +85,7 @@ Status ValidateScheduledCommand(const Command& command) {
     case CommandType::kStartVoice:
     case CommandType::kStopVoice:
     case CommandType::kSetVoiceGain:
+    case CommandType::kRampVoiceGain:
     case CommandType::kSetVoicePan:
     case CommandType::kSetVoiceFrequency:
       if (!command.voice_id.is_valid()) {
@@ -93,6 +94,7 @@ Status ValidateScheduledCommand(const Command& command) {
       }
       break;
     case CommandType::kSetBusGain:
+    case CommandType::kRampBusGain:
       if (!command.bus_id.is_valid()) {
         return InvalidScheduledCommand(
             "scheduled bus command needs a valid BusId");
@@ -114,7 +116,9 @@ Status ValidateScheduledCommand(const Command& command) {
 
   switch (command.type) {
     case CommandType::kSetVoiceGain:
+    case CommandType::kRampVoiceGain:
     case CommandType::kSetBusGain:
+    case CommandType::kRampBusGain:
     case CommandType::kSetNodeGain:
       if (!std::isfinite(value) || value < 0.0f) {
         return InvalidScheduledCommand("gain must be finite and non-negative");
@@ -412,7 +416,7 @@ class AudioRuntime::Impl {
     const double sample_rate_hz = device_->format().sample_rate_hz();
     const std::uint64_t block_start_frame = clock_.current_frame();
 
-    DrainCommands();
+    DrainCommands(block_start_frame);
     RenderBlock(output, sample_rate_hz, block_start_frame);
 
     clock_.Advance(output.frame_count());
@@ -440,7 +444,7 @@ class AudioRuntime::Impl {
     audio_epoch_ = epoch;
   }
 
-  void DrainCommands() noexcept {
+  void DrainCommands(std::uint64_t block_start_frame) noexcept {
     AdoptEpoch(session_epoch_.load(std::memory_order_acquire));
 
     QueuedCommand queued;
@@ -451,7 +455,7 @@ class AudioRuntime::Impl {
       }
 
       if (!queued.scheduled) {
-        ApplyCommand(queued.command);
+        ApplyCommand(queued.command, block_start_frame);
         continue;
       }
 
@@ -474,7 +478,7 @@ class AudioRuntime::Impl {
     ScheduledEvent event;
 
     while (event_scheduler_.PopDue(FramePosition{frame}, event)) {
-      ApplyCommand(event.command);
+      ApplyCommand(event.command, frame);
       event_reservations_.Release();
       diagnostics_.RecordScheduledEventExecuted(frame -
                                                 ToInteger(event.target_frame));
@@ -518,10 +522,10 @@ class AudioRuntime::Impl {
     }
   }
 
-  void ApplyCommand(const Command& command) noexcept {
+  void ApplyCommand(const Command& command, std::uint64_t frame) noexcept {
     render_state_.ApplyCommand(command);
-    voice_pool_.ApplyCommand(command);
-    bus_system_.ApplyCommand(command);
+    voice_pool_.ApplyCommand(command, frame);
+    bus_system_.ApplyCommand(command, frame);
 
     if (command.type == CommandType::kActivateGraphPlan) {
       if (graph_plan_store_.TryActivate(command.plan_handle)) {
@@ -558,7 +562,7 @@ class AudioRuntime::Impl {
 
     context.render_state->Render(context.output, context.sample_rate_hz);
 
-    RenderVoicesAndBuses(output);
+    RenderVoicesAndBuses(output, start_frame);
 
     GraphExecutionPlan* active_plan = graph_plan_store_.ActivePlan();
 
@@ -568,7 +572,8 @@ class AudioRuntime::Impl {
     }
   }
 
-  void RenderVoicesAndBuses(AudioBufferView output) noexcept {
+  void RenderVoicesAndBuses(AudioBufferView output,
+                            std::uint64_t start_frame) noexcept {
     if (output.channel_count() != 2) {
       return;
     }
@@ -597,19 +602,33 @@ class AudioRuntime::Impl {
       AudioBufferView bus_accumulator =
           bus_system_.MutableAccumulator(target_index, output.frame_count());
 
+      const GainRamp gain = voice_pool_.gain_ramp(i);
+      const bool constant_gain = gain.IsConstantFrom(start_frame);
+
       if (voice_pool_.source_channel_count(i) == 2) {
         voice_pool_.RenderVoiceSource(i, stereo_scratch, sample_rate_hz);
 
-        AccumulateStereoWithBalance(
-            bus_accumulator, stereo_scratch,
-            StereoBalanceGains(voice_pool_.pan(i), voice_pool_.gain(i)));
+        if (constant_gain) {
+          AccumulateStereoWithBalance(
+              bus_accumulator, stereo_scratch,
+              StereoBalanceGains(voice_pool_.pan(i), gain.target()));
+        } else {
+          AccumulateStereoWithBalanceRamped(
+              bus_accumulator, stereo_scratch,
+              StereoBalanceGains(voice_pool_.pan(i), 1.0f), gain, start_frame);
+        }
       } else {
         voice_pool_.RenderVoiceSource(i, mono_scratch, sample_rate_hz);
 
-        StereoGains gains =
-            EqualPowerPan(voice_pool_.pan(i), voice_pool_.gain(i));
-
-        AccumulateMonoToStereo(bus_accumulator, mono_scratch, gains);
+        if (constant_gain) {
+          AccumulateMonoToStereo(
+              bus_accumulator, mono_scratch,
+              EqualPowerPan(voice_pool_.pan(i), gain.target()));
+        } else {
+          AccumulateMonoToStereoRamped(bus_accumulator, mono_scratch,
+                                       EqualPowerPan(voice_pool_.pan(i), 1.0f),
+                                       gain, start_frame);
+        }
       }
     }
 
@@ -627,11 +646,24 @@ class AudioRuntime::Impl {
 
       AudioBufferView bus_accumulator =
           bus_system_.MutableAccumulator(b, output.frame_count());
+      const GainRamp bus_gain = bus_system_.gain_ramp(b);
 
-      AccumulateInto(master_accumulator, bus_accumulator, bus_system_.gain(b));
+      if (bus_gain.IsConstantFrom(start_frame)) {
+        AccumulateInto(master_accumulator, bus_accumulator, bus_gain.target());
+      } else {
+        AccumulateIntoRamped(master_accumulator, bus_accumulator, bus_gain,
+                             start_frame);
+      }
     }
 
-    ApplyGain(master_accumulator, bus_system_.gain(0));
+    const GainRamp master_gain = bus_system_.gain_ramp(0);
+
+    if (master_gain.IsConstantFrom(start_frame)) {
+      ApplyGain(master_accumulator, master_gain.target());
+    } else {
+      ApplyGainRamped(master_accumulator, master_gain, start_frame);
+    }
+
     AccumulateInto(output, master_accumulator, 1.0f);
 
     diagnostics_.SetActiveCounts(active_voice_count, active_bus_count);

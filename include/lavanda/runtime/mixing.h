@@ -1,6 +1,8 @@
 #ifndef LAVANDA_RUNTIME_MIXING_H_
 #define LAVANDA_RUNTIME_MIXING_H_
 
+#include <cstdint>
+
 #include "lavanda/core/status.h"
 #include "lavanda/runtime/handles.h"
 
@@ -26,6 +28,7 @@ class Voice {
   bool IsPlaying() const noexcept;
 
   Status SetGain(float gain);
+  Status RampGain(float target_gain, std::uint32_t duration_frames);
 
   Status SetPan(float pan);
 
@@ -55,6 +58,7 @@ class Bus {
   Status Destroy();
 
   Status SetGain(float gain);
+  Status RampGain(float target_gain, std::uint32_t duration_frames);
 
  private:
   friend class AudioRuntime;

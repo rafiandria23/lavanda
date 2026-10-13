@@ -10,6 +10,7 @@
 #include "lavanda/core/status.h"
 #include "lavanda/resources/audio_asset_id.h"
 #include "lavanda/runtime/command.h"
+#include "lavanda/runtime/gain_ramp.h"
 #include "lavanda/runtime/handles.h"
 
 namespace lavanda {
@@ -37,10 +38,11 @@ class VoicePool {
 
   void ReleaseSlot(VoiceId id) noexcept;
 
-  void ApplyCommand(const Command& command) noexcept;
+  void ApplyCommand(const Command& command, std::uint64_t frame = 0) noexcept;
 
   bool is_active(std::size_t index) const noexcept;
   float gain(std::size_t index) const noexcept;
+  GainRamp gain_ramp(std::size_t index) const noexcept;
   float pan(std::size_t index) const noexcept;
   BusId target_bus(std::size_t index) const noexcept;
 
@@ -61,7 +63,7 @@ class VoicePool {
     VoiceState state = VoiceState::kInactive;
     std::uint32_t generation = 0;
     float frequency_hz = 440.0f;
-    float gain = 1.0f;
+    GainRamp gain;
     float pan = 0.0f;
     BusId target_bus = kMasterBusId;
     double phase = 0.0;

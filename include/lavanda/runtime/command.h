@@ -35,6 +35,9 @@ enum class CommandType : std::uint8_t {
   kSetNodeDelayFrames,
 
   kActivateGraphPlan,
+
+  kRampVoiceGain,
+  kRampBusGain,
 };
 
 struct Command {
@@ -45,6 +48,7 @@ struct Command {
   NodeId node_id;
   GraphPlanHandle plan_handle;
   AudioAssetId asset_id;
+  std::uint32_t duration_frames = 0;
 };
 
 }  // namespace lavanda

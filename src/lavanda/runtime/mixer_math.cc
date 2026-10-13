@@ -34,6 +34,25 @@ void AccumulateMonoToStereo(AudioBufferView destination, AudioBufferView source,
   }
 }
 
+void AccumulateMonoToStereoRamped(AudioBufferView destination,
+                                  AudioBufferView source,
+                                  StereoGains unit_gains, const GainRamp& ramp,
+                                  std::uint64_t first_frame) noexcept {
+  if (destination.empty() || source.empty()) {
+    return;
+  }
+
+  const std::uint32_t frame_count = destination.frame_count();
+
+  for (std::uint32_t frame = 0; frame < frame_count; ++frame) {
+    const float gain = ramp.ValueAt(first_frame + frame);
+    const float sample = source(frame, 0);
+
+    destination(frame, 0) += sample * (unit_gains.left * gain);
+    destination(frame, 1) += sample * (unit_gains.right * gain);
+  }
+}
+
 void AccumulateInto(AudioBufferView destination, AudioBufferView source,
                     float gain) noexcept {
   if (destination.empty() || source.empty()) {
@@ -50,6 +69,25 @@ void AccumulateInto(AudioBufferView destination, AudioBufferView source,
   }
 }
 
+void AccumulateIntoRamped(AudioBufferView destination, AudioBufferView source,
+                          const GainRamp& ramp,
+                          std::uint64_t first_frame) noexcept {
+  if (destination.empty() || source.empty()) {
+    return;
+  }
+
+  const std::uint32_t frame_count = destination.frame_count();
+  const std::uint32_t channel_count = destination.channel_count();
+
+  for (std::uint32_t frame = 0; frame < frame_count; ++frame) {
+    const float gain = ramp.ValueAt(first_frame + frame);
+
+    for (std::uint32_t channel = 0; channel < channel_count; ++channel) {
+      destination(frame, channel) += source(frame, channel) * gain;
+    }
+  }
+}
+
 void ApplyGain(AudioBufferView buffer, float gain) noexcept {
   if (buffer.empty()) {
     return;
@@ -59,6 +97,24 @@ void ApplyGain(AudioBufferView buffer, float gain) noexcept {
   const std::uint32_t channel_count = buffer.channel_count();
 
   for (std::uint32_t frame = 0; frame < frame_count; ++frame) {
+    for (std::uint32_t channel = 0; channel < channel_count; ++channel) {
+      buffer(frame, channel) *= gain;
+    }
+  }
+}
+
+void ApplyGainRamped(AudioBufferView buffer, const GainRamp& ramp,
+                     std::uint64_t first_frame) noexcept {
+  if (buffer.empty()) {
+    return;
+  }
+
+  const std::uint32_t frame_count = buffer.frame_count();
+  const std::uint32_t channel_count = buffer.channel_count();
+
+  for (std::uint32_t frame = 0; frame < frame_count; ++frame) {
+    const float gain = ramp.ValueAt(first_frame + frame);
+
     for (std::uint32_t channel = 0; channel < channel_count; ++channel) {
       buffer(frame, channel) *= gain;
     }
