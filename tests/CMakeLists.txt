@@ -85,6 +85,7 @@ add_executable(lavanda_unit_tests
   unit/runtime/scheduled_graph_operations_test.cc
   unit/runtime/gain_ramp_test.cc
   unit/runtime/scheduled_ramp_test.cc
+  unit/runtime/scheduled_realtime_safety_test.cc
 )
 target_link_libraries(lavanda_unit_tests PRIVATE
   lavanda::lavanda
