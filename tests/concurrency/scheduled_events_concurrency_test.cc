@@ -28,7 +28,6 @@ using test_support::RenderLoopOptions;
 // Definitions
 // ---------------------------------------------------------------------------
 
-constexpr int kMaxRetryAttempts = 10'000'000;
 constexpr std::chrono::seconds kWaitTimeout{20};
 
 constexpr std::uint64_t kMaxBlockFrames = 64;
@@ -67,9 +66,10 @@ bool WaitForFrame(const AudioRuntime& runtime, std::uint64_t frame) {
 
 template <typename Fn>
 Status RetryOnBackpressure(std::mutex& control_mutex, Fn&& fn) {
+  const auto deadline = std::chrono::steady_clock::now() + kWaitTimeout;
   Status status;
 
-  for (int attempt = 0; attempt < kMaxRetryAttempts; ++attempt) {
+  do {
     {
       std::lock_guard<std::mutex> lock(control_mutex);
 
@@ -82,14 +82,16 @@ Status RetryOnBackpressure(std::mutex& control_mutex, Fn&& fn) {
     }
 
     std::this_thread::yield();
-  }
+  } while (std::chrono::steady_clock::now() < deadline);
 
   return status;
 }
 
 StatusOr<Voice> CreateVoiceLocked(AudioRuntime& runtime,
                                   std::mutex& control_mutex) {
-  for (int attempt = 0; attempt < kMaxRetryAttempts; ++attempt) {
+  const auto deadline = std::chrono::steady_clock::now() + kWaitTimeout;
+
+  do {
     {
       std::lock_guard<std::mutex> lock(control_mutex);
       StatusOr<Voice> voice_or = runtime.CreateVoice();
@@ -100,7 +102,7 @@ StatusOr<Voice> CreateVoiceLocked(AudioRuntime& runtime,
     }
 
     std::this_thread::yield();
-  }
+  } while (std::chrono::steady_clock::now() < deadline);
 
   return Status(ErrorCode::kResourceExhausted, "could not create a voice");
 }
@@ -675,8 +677,10 @@ TEST_F(ScheduledConcurrencyTest,
 
       for (std::uint64_t k = 0; k < kCapacity; ++k) {
         Status status = schedule_far();
+        const auto deadline = std::chrono::steady_clock::now() + kWaitTimeout;
 
-        while (status.code() == ErrorCode::kQueueFull) {
+        while (status.code() == ErrorCode::kQueueFull &&
+               std::chrono::steady_clock::now() < deadline) {
           std::this_thread::yield();
           status = schedule_far();
         }
