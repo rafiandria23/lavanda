@@ -7,19 +7,14 @@
 #include <thread>
 
 #include "lavanda/lavanda.h"
+#include "test_support/hardware_gate.h"
 
 namespace lavanda {
 namespace {
 
-bool HardwareTestsRequested() {
-  const char* value = std::getenv("LAVANDA_RUN_HARDWARE_TESTS");
-  return value != nullptr && std::string(value) == "1";
-}
-
 TEST(AudioRuntimeMixingIntegrationTest, MultiVoiceMixingAgainstRealHardware) {
-  if (!HardwareTestsRequested()) {
-    GTEST_SKIP() << "Set LAVANDA_RUN_HARDWARE_TESTS=1 to run this against "
-                    "real hardware.";
+  if (!test_support::HardwareTestsRequested()) {
+    GTEST_SKIP() << test_support::kHardwareSkipMessage;
   }
 
   StatusOr<std::unique_ptr<AudioDevice>> device_or =

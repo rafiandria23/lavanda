@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "lavanda/lavanda.h"
+#include "test_support/hardware_gate.h"
 
 namespace lavanda {
 namespace {
@@ -21,11 +22,6 @@ namespace {
 namespace fs = std::filesystem;
 
 constexpr double kPi = 3.14159265358979323846;
-
-bool HardwareTestsRequested() {
-  const char* value = std::getenv("LAVANDA_RUN_HARDWARE_TESTS");
-  return value != nullptr && std::string(value) == "1";
-}
 
 void SleepMs(int milliseconds) {
   std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds));
@@ -137,9 +133,8 @@ void CompileAndActivate(AudioRuntime& runtime) {
 }
 
 TEST(AudioRuntimeAssetIntegrationTest, AssetPlaybackAgainstRealHardware) {
-  if (!HardwareTestsRequested()) {
-    GTEST_SKIP() << "Set LAVANDA_RUN_HARDWARE_TESTS=1 to run this against "
-                    "real hardware.";
+  if (!test_support::HardwareTestsRequested()) {
+    GTEST_SKIP() << test_support::kHardwareSkipMessage;
   }
 
   TempFile mono_file("lavanda_hw_mono.wav");
@@ -296,9 +291,8 @@ TEST(AudioRuntimeAssetIntegrationTest, AssetPlaybackAgainstRealHardware) {
 
 TEST(AudioRuntimeAssetIntegrationTest,
      SharedAssetStaleIdAndSlotReuseAgainstRealHardware) {
-  if (!HardwareTestsRequested()) {
-    GTEST_SKIP() << "Set LAVANDA_RUN_HARDWARE_TESTS=1 to run this against "
-                    "real hardware.";
+  if (!test_support::HardwareTestsRequested()) {
+    GTEST_SKIP() << test_support::kHardwareSkipMessage;
   }
 
   TempFile file_a("lavanda_hw_shared_a.wav");
