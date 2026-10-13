@@ -1,6 +1,7 @@
 #ifndef LAVANDA_TESTS_TEST_SUPPORT_FAKE_AUDIO_DEVICE_H_
 #define LAVANDA_TESTS_TEST_SUPPORT_FAKE_AUDIO_DEVICE_H_
 
+#include <atomic>
 #include <utility>
 
 #include "lavanda/device/audio_device.h"
@@ -36,19 +37,19 @@ class FakeAudioDevice : public AudioDevice {
       return Status(ErrorCode::kNotOpen, "fake device not open");
     }
 
-    is_running_ = true;
+    is_running_.store(true, std::memory_order_release);
 
     return Status::Ok();
   }
 
   Status Stop() override {
-    is_running_ = false;
+    is_running_.store(false, std::memory_order_release);
 
     return Status::Ok();
   }
 
   Status Close() override {
-    is_running_ = false;
+    is_running_.store(false, std::memory_order_release);
     is_open_ = false;
     render_callback_ = nullptr;
 
@@ -56,14 +57,16 @@ class FakeAudioDevice : public AudioDevice {
   }
 
   bool is_open() const noexcept override { return is_open_; }
-  bool is_running() const noexcept override { return is_running_; }
+  bool is_running() const noexcept override {
+    return is_running_.load(std::memory_order_acquire);
+  }
   const AudioFormat& format() const noexcept override { return format_; }
   std::uint32_t buffer_size_frames() const noexcept override {
     return buffer_size_frames_;
   }
 
   bool PumpRender(AudioBufferView output) {
-    if (!is_running_ || !render_callback_) {
+    if (!is_running_.load(std::memory_order_acquire) || !render_callback_) {
       return false;
     }
 
@@ -75,7 +78,7 @@ class FakeAudioDevice : public AudioDevice {
  private:
   bool fail_open_;
   bool is_open_ = false;
-  bool is_running_ = false;
+  std::atomic<bool> is_running_{false};
   RenderCallback render_callback_;
   AudioFormat format_;
   std::uint32_t buffer_size_frames_ = 0;

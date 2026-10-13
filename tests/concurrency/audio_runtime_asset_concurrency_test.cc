@@ -39,7 +39,6 @@ Status StatusOf(const StatusOr<T>& result) {
 }
 
 template <typename Fn>
-
 auto Retry(Fn&& fn, int max_attempts = kMaxRetryAttempts) -> decltype(fn()) {
   auto result = fn();
 

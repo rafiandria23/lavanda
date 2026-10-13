@@ -60,7 +60,6 @@ bool HasNonSilence(const AudioBuffer& buffer) {
 }
 
 template <typename Fn>
-
 bool RetryUntilOk(Fn&& fn) {
   for (int attempt = 0; attempt < kMaxRetryAttempts; ++attempt) {
     if (fn().ok()) return true;

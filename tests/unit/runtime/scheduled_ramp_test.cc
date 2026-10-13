@@ -203,7 +203,6 @@ double LinearRamp(double from, double to, std::uint64_t start,
 }
 
 template <typename GainFn>
-
 void ExpectUnitTimesGain(const std::vector<float>& actual,
                          const std::vector<float>& unit, GainFn gain_at) {
   ASSERT_EQ(actual.size(), unit.size());

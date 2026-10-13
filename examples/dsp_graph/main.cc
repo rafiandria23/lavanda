@@ -22,7 +22,6 @@ void Report(const char* label, const lavanda::Status& status) {
 }
 
 template <typename NodeT>
-
 lavanda::NodeId AddNode(lavanda::AudioGraph& graph, std::unique_ptr<NodeT> node,
                         const char* what) {
   lavanda::StatusOr<lavanda::NodeId> id = graph.AddNode(std::move(node));
