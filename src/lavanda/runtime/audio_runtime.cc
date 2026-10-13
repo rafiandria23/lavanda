@@ -24,6 +24,7 @@
 #include "lavanda/runtime/bus_system.h"
 #include "lavanda/runtime/command_queue.h"
 #include "lavanda/runtime/event_scheduler.h"
+#include "lavanda/runtime/float_conversion.h"
 #include "lavanda/runtime/mixer_math.h"
 #include "lavanda/runtime/render_context.h"
 #include "lavanda/runtime/render_diagnostics.h"
@@ -64,12 +65,8 @@ void ApplyNodeParameterCommand(AudioNode* node, CommandType type,
       break;
     case CommandType::kSetNodeDelayFrames:
       if (auto* delay = dynamic_cast<DelayNode*>(node)) {
-        const double requested = static_cast<double>(value);
-        const double upper = static_cast<double>(delay->max_delay_frames());
-        const double clamped =
-            requested > 0.0 ? std::min(requested, upper) : 0.0;
-
-        delay->SetDelayFrames(static_cast<std::uint32_t>(clamped));
+        delay->SetDelayFrames(
+            ClampFloatToCount(value, delay->max_delay_frames()));
       }
       break;
     default:
