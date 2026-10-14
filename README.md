@@ -204,9 +204,9 @@ than blocking. Pending events survive `Stop()`/`Start()` and are discarded by
 
 The control-side calls (`ScheduleAtFrame()`, `Submit()`, and the `Voice`/`Bus`
 setters) are single-producer and must be externally serialized if more than
-one thread uses them. `frame_position()`, `stats()` and `is_running()` are
-safe from any thread. Scheduled events cannot be cancelled, and ramps are
-linear and gain-only for now.
+one thread uses them. `frame_position()` is safe from any thread; `stats()`
+and `is_running()` belong to the control thread. Scheduled events cannot be
+cancelled, and ramps are linear and gain-only for now.
 
 See [`docs/architecture/scheduling_and_timeline.md`](docs/architecture/scheduling_and_timeline.md)
 for the full design -- the timeline, what can be scheduled, validation,

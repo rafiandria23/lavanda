@@ -177,7 +177,10 @@ segments produces the same samples; the test suite checks this bit for bit.
 If a device delivers a callback larger than `max_frames_per_block`
 (default 4096), the block is rendered as a single segment: events due at its
 start are applied, and events that fall inside it are applied at the start of
-the next callback and counted as late.
+the next callback and counted as late. Voices, buses and the graph are also
+not rendered for such a callback (the mixer and the graph executor both skip
+blocks above their preallocated size), so its output is silent apart from the
+legacy Phase 2 tone. This predates Phase 6.
 
 ## Ordering rules
 
@@ -324,8 +327,12 @@ Pan, frequency, and graph-node parameters are stepped, not ramped.
   but never concurrently; use your own mutex or a single control thread. The
   concurrency tests exercise exactly this: several threads taking turns
   through one lock while the audio thread renders.
-- **Safe from any thread at any time:** `frame_position()`, `stats()`,
-  `is_running()`.
+- **Safe from any thread at any time:** `frame_position()`.
+- **Control thread only (serialized with the other control calls):** `stats()`
+  and `is_running()`. The scheduling and render counters inside `stats()` are
+  atomics, but the asset counters are computed from the resource store's slot
+  states and byte total, which the control thread updates without
+  synchronization, so a concurrent call from another thread is a data race.
 - **The audio thread** touches the heap, the sequence counter, and the epoch
   it has adopted; no other thread does.
 
@@ -427,7 +434,9 @@ must follow that order.
   clamp in `SetDelayFrames` is one frame too generous. This predates Phase 6
   and applies equally to immediate and scheduled changes.
 - **Oversized callbacks** (above `max_frames_per_block`) are not split, so
-  events inside them are late by up to one callback.
+  events inside them are late by up to one callback, and voices, buses and the
+  graph are not rendered for them (silence apart from the legacy tone). This
+  predates Phase 6.
 - **Core Audio buffer size.** `AudioDevice::buffer_size_frames()` reports the
   requested size, not necessarily the size the device uses; the scheduler does
   not depend on it.

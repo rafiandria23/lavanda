@@ -104,12 +104,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The control-side API is single-producer: `ScheduleAtFrame()`, `Submit()` and
   the `Voice`/`Bus`/`GraphNodeHandle` setters feed one SPSC queue. They may be
   called from different threads over time but must be externally serialized.
-  `frame_position()`, `stats()` and `is_running()` are safe from any thread.
+  `frame_position()` is safe from any thread. `stats()` and `is_running()` are
+  control-thread calls: `stats()` reads resource-store fields that the control
+  thread updates without synchronization.
 - Scheduled events cannot be cancelled once accepted.
 - Ramps are linear and apply to voice and bus gain only. Node-parameter ramps
   (including `GainNode`) are deferred. `kSetVoiceBus` is not schedulable.
 - Callbacks larger than `max_frames_per_block` are rendered as one segment, so
-  events inside them are applied at the next callback and counted late.
+  events inside them are applied at the next callback and counted late. Voices,
+  buses and the graph are not rendered for such callbacks (silence apart from
+  the legacy tone), which predates Phase 6.
 - `DelayNode` (Phase 4): `delay == max` reads the sample just written, so the
   effective maximum is `max - 1` frames. This applies to immediate and
   scheduled changes alike and is left as is.
