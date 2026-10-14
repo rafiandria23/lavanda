@@ -109,6 +109,9 @@ TEST(AudioRuntimeSchedulingIntegrationTest,
   ASSERT_TRUE(ScheduleVoice(runtime, CommandType::kRampVoiceGain, voice.id(),
                             0.2f, start_at, 24000)
                   .ok());
+  ASSERT_TRUE(ScheduleVoice(runtime, CommandType::kSetVoiceFrequency,
+                            voice.id(), 660.0f, start_at + 12000)
+                  .ok());
   ASSERT_TRUE(
       ScheduleVoice(runtime, CommandType::kStopVoice, voice.id(), 0.0f, stop_at)
           .ok());
@@ -125,9 +128,9 @@ TEST(AudioRuntimeSchedulingIntegrationTest,
   const RuntimeStats after = runtime.stats();
 
   EXPECT_EQ(after.scheduled_events_accepted - before.scheduled_events_accepted,
-            3u);
+            4u);
   EXPECT_EQ(after.scheduled_events_executed - before.scheduled_events_executed,
-            3u);
+            4u);
   EXPECT_EQ(after.scheduled_events_late - before.scheduled_events_late, 0u)
       << "max lateness was " << after.scheduled_events_max_lateness_frames
       << " frames";
@@ -251,6 +254,20 @@ TEST(AudioRuntimeSchedulingIntegrationTest,
             stats.scheduled_events_executed + stats.scheduled_events_discarded +
                 stats.scheduled_events_dropped +
                 stats.scheduled_events_pending);
+
+  // --- Repeated Stop()/Start() cycles with an empty scheduler --------------
+
+  for (int cycle = 0; cycle < 3; ++cycle) {
+    const std::uint64_t before_cycle = Now(runtime);
+
+    ASSERT_TRUE(runtime.Stop().ok());
+    EXPECT_FALSE(runtime.is_running());
+    ASSERT_TRUE(runtime.Start().ok());
+    EXPECT_TRUE(runtime.is_running());
+    ASSERT_TRUE(WaitForFrame(runtime, before_cycle + 4800))
+        << "the clock did not advance after restart, cycle " << cycle;
+    EXPECT_GE(Now(runtime), before_cycle);
+  }
 
   for (std::uint64_t i = 0; i < kPendingAtShutdown; ++i) {
     EXPECT_TRUE(ScheduleVoice(runtime, CommandType::kSetVoiceGain, voice_id,

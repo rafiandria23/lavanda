@@ -24,14 +24,15 @@ The one rule that shapes the design:
 8. [Late events](#late-events)
 9. [Capacity and backpressure](#capacity-and-backpressure)
 10. [Lifecycle: Stop, Shutdown, restart](#lifecycle-stop-shutdown-restart)
-11. [Gain ramps](#gain-ramps)
-12. [Threading contract](#threading-contract)
-13. [Diagnostics](#diagnostics)
-14. [Choosing a lead time](#choosing-a-lead-time)
-15. [Real-time safety and verification](#real-time-safety-and-verification)
-16. [Public vs internal types](#public-vs-internal-types)
-17. [Known limitations](#known-limitations)
-18. [Out of scope](#out-of-scope)
+11. [Resource and plan lifetime](#resource-and-plan-lifetime)
+12. [Gain ramps](#gain-ramps)
+13. [Threading contract](#threading-contract)
+14. [Diagnostics](#diagnostics)
+15. [Choosing a lead time](#choosing-a-lead-time)
+16. [Real-time safety and verification](#real-time-safety-and-verification)
+17. [Public vs internal types](#public-vs-internal-types)
+18. [Known limitations](#known-limitations)
+19. [Out of scope](#out-of-scope)
 
 ## Core idea
 
@@ -255,6 +256,43 @@ Discards are counted in `scheduled_events_discarded`.
 The practical consequence: **capacity is returned to the application when the
 next session starts rendering, not when `Shutdown()` returns.**
 `scheduled_events_pending` stays elevated in between.
+
+## Resource and plan lifetime
+
+Phase 6 changes nothing about who owns what. The guarantees from Phases 4 and 5
+hold for scheduled events exactly as they do for immediate commands:
+
+- **A pending event owns nothing.** It is a `Command` plus a target frame. It
+  carries only compact, generation-checked ids (`VoiceId`, `BusId`, `NodeId`,
+  and the voice's asset binding), never a pointer into a voice slot, a bus
+  slot, a resource-store slot, a graph node, or a graph plan.
+- **Ids are resolved when the event executes, not when it is scheduled.** A
+  stale id (the slot was destroyed and possibly reused) finds nothing and the
+  event has no effect; it can never reach the slot's new occupant. This holds
+  for voices, buses, and nodes, and for ramps.
+- **Assets stay pinned by their holders, not by events.** A voice pins its
+  asset for its lifetime. Releasing the asset while a scheduled start is still
+  pending does not invalidate the start: the voice's pin keeps the data
+  resident, and it is unpinned once, when the voice is destroyed. Destroying an
+  asset voice drops its pending start instead of resurrecting it.
+- **Graph plans are untouched by the scheduler.** Because no event holds a plan,
+  the scheduler cannot extend or shorten a plan's life. Plan activation,
+  retirement, and reclamation stay exactly as in Phase 4: the audio thread
+  activates and retires, and plans (with their asset pins) are destroyed only
+  on the control thread.
+- **Node events follow the active plan.** An event is delivered to whichever
+  plan is active when it executes. An event for a node that does not exist in
+  that plan, is stale, or is the wrong kind of node, is consumed harmlessly.
+  An event that executes while no plan is active is consumed, not remembered
+  for a later plan.
+- **Nothing is freed on the audio thread because of the scheduler.** The heap
+  is preallocated storage of plain data; flushing it (on a new session, see
+  [Lifecycle](#lifecycle-stop-shutdown-restart)) destroys nothing.
+
+These properties are exercised by the scheduled-operations and scheduled-graph
+unit tests (stale voice and bus slots, asset release with a pending start,
+destroyed asset voice, unknown or stale nodes, no active plan, events across a
+plan swap) and by the allocation-guard tests for the scheduled paths.
 
 ## Gain ramps
 

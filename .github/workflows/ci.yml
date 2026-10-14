@@ -19,7 +19,7 @@ jobs:
         run: cmake --build --preset debug
 
       - name: Test (Debug)
-        run: ctest --preset debug
+        run: ctest --preset debug --output-on-failure
 
       - name: Configure (Release)
         run: cmake --preset release -DLAVANDA_BUILD_COREAUDIO_BACKEND=ON
@@ -28,13 +28,16 @@ jobs:
         run: cmake --build --preset release
 
       - name: Test (Release)
-        run: ctest --preset release
+        run: ctest --preset release --output-on-failure
 
   linux-core-only:
-    name: Linux (platform-independent core, no backend)
+    name: Linux (GCC, platform-independent core, no backend)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
+      - name: Compiler version
+        run: c++ --version
 
       - name: Configure (Debug)
         run: cmake --preset debug
@@ -43,4 +46,13 @@ jobs:
         run: cmake --build --preset debug
 
       - name: Test (Debug)
-        run: ctest --preset debug
+        run: ctest --preset debug --output-on-failure
+
+      - name: Configure (Release)
+        run: cmake --preset release
+
+      - name: Build (Release)
+        run: cmake --build --preset release
+
+      - name: Test (Release)
+        run: ctest --preset release --output-on-failure
