@@ -8,9 +8,12 @@ application create and independently control multiple simultaneous
 sounds. Phase 4 added a DSP graph: nodes (oscillators, gains, filters,
 delays, mixers, pans) wired into a graph on the control side, compiled to
 an immutable execution plan, and executed by the audio thread. Phase 5
-adds audio assets: WAV files decoded once on the control side into
+added audio assets: WAV files decoded once on the control side into
 immutable resident data, played by voices and graph nodes with no file
-I/O, decoding, or allocation on the audio thread.
+I/O, decoding, or allocation on the audio thread. Phase 6 adds a
+frame-accurate timeline: voice, bus, and graph-node changes can be
+scheduled at an exact audio frame, even in the middle of a device
+callback, and gains can ramp smoothly between values.
 
 ```
 Application -> Lavanda Engine -> DSP/Graph/Runtime -> Audio Device
@@ -26,8 +29,10 @@ for the Phase 3 voice/bus mixer,
 [`docs/architecture/dsp_graph.md`](docs/architecture/dsp_graph.md) for the
 Phase 4 DSP graph,
 [`docs/architecture/resources_and_assets.md`](docs/architecture/resources_and_assets.md)
-for the Phase 5 asset system, and [`CHANGELOG.md`](CHANGELOG.md) for what's
-shipped.
+for the Phase 5 asset system,
+[`docs/architecture/scheduling_and_timeline.md`](docs/architecture/scheduling_and_timeline.md)
+for the Phase 6 timeline and scheduler, and [`CHANGELOG.md`](CHANGELOG.md) for
+what's shipped.
 
 ## Current platform support
 
@@ -156,6 +161,58 @@ there is no loop or pause yet, and streaming is deferred to Phase 8. See
 for the lifetime protocol, the stereo balance law, resampler limits, and
 real-time safety verification. Try it with `examples/playback`.
 
+## Scheduling and the timeline (Phase 6)
+
+Time is a count of rendered frames owned by the audio thread.
+`frame_position()` is the start frame of the next device callback;
+`ScheduleAtFrame()` applies a command at an exact frame, and gain ramps move
+a voice or bus gain smoothly over a number of frames:
+
+```cpp
+lavanda::AudioRuntime runtime(std::move(device));
+runtime.Start();
+
+lavanda::StatusOr<lavanda::Voice> voice = runtime.CreateVoice();
+voice.value().SetGain(0.0f);
+
+// Pick a frame comfortably in the future (here ~0.25 s at 48 kHz).
+const lavanda::FramePosition when = lavanda::AddSaturating(
+    runtime.frame_position(), lavanda::FrameCount{12000});
+
+lavanda::Command start;
+start.type = lavanda::CommandType::kStartVoice;
+start.voice_id = voice.value().id();
+runtime.ScheduleAtFrame(start, when);
+
+lavanda::Command fade_in;
+fade_in.type = lavanda::CommandType::kRampVoiceGain;
+fade_in.value = 0.5f;            // target gain
+fade_in.duration_frames = 2400;  // 50 ms at 48 kHz
+fade_in.voice_id = voice.value().id();
+runtime.ScheduleAtFrame(fade_in, when);
+```
+
+The callback is rendered in segments split at event frames, so an event at
+frame T first affects sample T. Immediate commands are applied before
+scheduled events at the same frame, and events at the same frame run in
+submission order. An event whose frame has already passed is not lost: it is
+applied at the next callback and counted in `RuntimeStats::scheduled_events_late`.
+The number of pending events is bounded by `RuntimeConfig::max_scheduled_events`;
+when it is reached, `ScheduleAtFrame()` returns `kResourceExhausted` rather
+than blocking. Pending events survive `Stop()`/`Start()` and are discarded by
+`Shutdown()`.
+
+The control-side calls (`ScheduleAtFrame()`, `Submit()`, and the `Voice`/`Bus`
+setters) are single-producer and must be externally serialized if more than
+one thread uses them. `frame_position()`, `stats()` and `is_running()` are
+safe from any thread. Scheduled events cannot be cancelled, and ramps are
+linear and gain-only for now.
+
+See [`docs/architecture/scheduling_and_timeline.md`](docs/architecture/scheduling_and_timeline.md)
+for the full design -- the timeline, what can be scheduled, validation,
+ordering and lateness rules, capacity, lifecycle, ramps, the threading
+contract, and real-time safety verification. Try it with `examples/scheduling`.
+
 ## Build requirements
 
 - CMake >= 3.24
@@ -212,7 +269,7 @@ preset enables, so it needs its own build directory:
 
 ```sh
 cmake -S . -B build/tsan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-  -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer -g" \
+  -DLAVANDA_ENABLE_ASAN=OFF -DLAVANDA_ENABLE_TSAN=ON \
   -DLAVANDA_BUILD_COREAUDIO_BACKEND=ON
 cmake --build build/tsan --target lavanda_concurrency_tests
 ctest --test-dir build/tsan --output-on-failure -R "Concurrency"
@@ -220,11 +277,12 @@ ctest --test-dir build/tsan --output-on-failure -R "Concurrency"
 
 The concurrency tests drive a real render thread against the control
 thread. The render thread there is a `FakeAudioDevice` loop, not Core
-Audio's own callback thread.
+Audio's own callback thread. To confirm the build is actually instrumented:
+`grep -c "fsanitize=thread" build/tsan/build.ninja` should be non-zero.
 
 ### Running the hardware-dependent integration tests
 
-Six integration tests exercise real hardware end to end -- the Phase 1
+The integration tests exercise real hardware end to end -- the Phase 1
 device lifecycle, the Phase 2 runtime driving playback through
 `Submit()`, the Phase 3 voice/bus mixer's full lifecycle checklist
 (multiple voices, gain/pan changes, bus routing, stop/destroy/recreate
@@ -236,15 +294,21 @@ voices with live balance changes and a replay, then an asset node in a
 graph that is released while playing and freed when its plan is replaced;
 and three voices sharing one asset, followed by stale-id rejection and
 reuse of the only asset slot. The asset tests write their own one-second
-WAV files, so they need no fixtures. All are opt-in, since CI runners
-aren't guaranteed to have an accessible audio output device, and because
-nobody wants audio I/O firing as a side effect of an ordinary `ctest` run:
+WAV files, so they need no fixtures. Two more cover Phase 6: scheduled
+events flowing through real device callbacks (executed, none late, capacity
+returned), and Stop/Start/Shutdown/restart behavior of the timeline (frozen
+clock, retained and discarded events). These check the clock and the
+bookkeeping, not the audio content; listen to `examples/scheduling` for that.
+All are opt-in, since CI runners aren't guaranteed to have an accessible audio
+output device, and because nobody wants audio I/O firing as a side effect of
+an ordinary `ctest` run. They share one gate
+(`tests/test_support/hardware_gate.h`):
 
 ```sh
-LAVANDA_RUN_HARDWARE_TESTS=1 ctest --preset debug -R "DefaultOutputDevice|AudioRuntimeIntegration|AudioRuntimeMixingIntegration|AudioRuntimeGraphIntegration|AudioRuntimeAssetIntegration"
+LAVANDA_RUN_HARDWARE_TESTS=1 ctest --preset debug -R "DefaultOutputDevice|AudioRuntimeIntegration|AudioRuntimeMixingIntegration|AudioRuntimeGraphIntegration|AudioRuntimeAssetIntegration|AudioRuntimeSchedulingIntegration"
 ```
 
-Without that environment variable, all six skip themselves rather than
+Without that environment variable, they skip themselves rather than
 failing.
 
 ### Benchmarks
@@ -313,6 +377,18 @@ for stereo files, and values outside -1..1 are clamped. The files under
 `tests/fixtures/audio/` are decoder test vectors only a few frames long, so
 use your own audio to hear something.
 
+```sh
+./build/debug/examples/scheduling/scheduling
+```
+
+Schedules an eight-note phrase against the audio clock: each note is a
+`kSetVoiceFrequency` plus an attack and a decay `kRampVoiceGain` at exact
+frames, all under a `kRampBusGain` swell, with a final stop. One event is
+deliberately dated in the past to show the late counter. Prints the
+scheduler statistics before and after (expect `accepted=28 executed=28 late=1
+pending=0`) and shuts down cleanly -- the Phase 6 demonstration. It takes no
+arguments and needs no audio file.
+
 ## Project layout
 
 ```
@@ -320,7 +396,9 @@ include/lavanda/     Public API (platform-independent)
 src/lavanda/          Implementation
   platform/coreaudio/   Core Audio backend (Phase 1)
   runtime/               Real-time runtime internals (Phase 2),
-                         voice/bus/mixer internals (Phase 3)
+                         voice/bus/mixer internals (Phase 3),
+                         event scheduler, reservations, and gain ramps
+                         (Phase 6)
   graph/                 Graph compiler, execution plan, plan store,
                          executor, node implementations (Phase 4),
                          asset pins and the asset source node (Phase 5)
@@ -329,23 +407,28 @@ src/lavanda/          Implementation
 include/lavanda/graph/ Public graph API, including built-in nodes
 include/lavanda/resources/  Public asset types (Phase 5)
 tests/                Unit, concurrency, and integration tests;
-                       tests/fixtures/audio holds the WAV test vectors
+                       tests/fixtures/audio holds the WAV test vectors,
+                       tests/test_support holds shared fakes and helpers
+                       (FakeAudioDevice, RenderLoop, hardware gate)
 benchmarks/            graph_benchmark (Phase 4, opt-in)
 examples/              device_probe (Phase 1), runtime_demo (Phase 2),
                        mixing (Phase 3), dsp_graph (Phase 4),
-                       playback (Phase 5)
+                       playback (Phase 5), scheduling (Phase 6)
 docs/architecture/    Design documentation
 ```
 
 ## Current project phase
 
-**Phase 5 of the planned build-out** (audio resources, assets, and
-decoding, built on Phase 3's voices and Phase 4's graph). Still explicitly
-out of scope: streaming (deferred to Phase 8), compressed codecs, looping,
-pausing and seeking, anti-aliased resampling, crossfading or state
-migration between graph plans, parameter smoothing, higher-order filters
-and effects, spatial audio, MIDI, plugins, and a sample-accurate
-scheduler. See
+**Phase 6 of the planned build-out** (sample-accurate scheduling, timeline,
+and automation, built on Phase 2's runtime, Phase 3's voices and buses, and
+Phase 4's graph). Still explicitly out of scope: cancelling or rescheduling
+events, ramps on anything but voice and bus gain, automation curves other than
+linear, tempo maps and musical time, offline rendering, streaming (deferred to
+Phase 8), compressed codecs, looping, pausing and seeking, anti-aliased
+resampling, crossfading or state migration between graph plans, higher-order
+filters and effects, spatial audio, MIDI, plugins, and multi-producer control
+APIs. See
+[`docs/architecture/scheduling_and_timeline.md`](docs/architecture/scheduling_and_timeline.md#known-limitations),
 [`docs/architecture/resources_and_assets.md`](docs/architecture/resources_and_assets.md#out-of-scope)
 and
 [`docs/architecture/dsp_graph.md`](docs/architecture/dsp_graph.md#out-of-scope)

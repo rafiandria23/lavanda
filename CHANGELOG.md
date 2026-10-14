@@ -5,6 +5,106 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Phase 6: Sample-Accurate Scheduling, Timeline, and Automation
+
+#### Added
+
+- `FramePosition` and `FrameCount` (public, `lavanda/core/time.h`): opaque
+  64-bit frame types with `ToInteger()`, `AddSaturating()`, `FramesBetween()`,
+  `FramesToSeconds()` and `kMaxFramePosition`. Neither converts implicitly to
+  an integer.
+- `AudioRuntime::frame_position()`: the start frame of the next device
+  callback. Monotonic, never reset, safe to read from any thread. Stopping
+  freezes it; shutting down and restarting does not rewind it.
+- `AudioRuntime::ScheduleAtFrame(command, frame)`: apply a command at an exact
+  audio frame, including in the middle of a device callback. The callback is
+  rendered in segments split at event frames, so an event at frame T first
+  affects sample T. Returns `kInvalidArgument`, `kResourceExhausted` (event cap
+  reached), `kQueueFull` or `kDeviceUnavailable` on failure.
+- Schedulable commands: `kStartVoice`, `kStopVoice`, `kSetVoiceGain`,
+  `kSetVoicePan`, `kSetVoiceFrequency`, `kSetBusGain`, the graph-node setters
+  (`kSetNodeGain`, `kSetNodeFrequency`, `kSetNodeCutoff`, `kSetNodePan`,
+  `kSetNodeDelayFrames`), and the new ramps. Anything else is rejected with
+  `kInvalidArgument` before any capacity is reserved.
+- Gain ramps: `kRampVoiceGain` and `kRampBusGain`, with `Voice::RampGain()` and
+  `Bus::RampGain()`. Linear, evaluated in closed form from the absolute frame
+  so the result does not depend on how the callback is segmented. Duration 0
+  is a step; a replacement ramp starts from the exact current value; `SetGain`
+  cancels a ramp. The constant-gain path is bit-identical to Phase 5.
+- `Command::duration_frames`.
+- `RuntimeConfig::max_scheduled_events` (default 256; 0 disables scheduling).
+- `RuntimeStats`: `scheduled_events_accepted`, `_executed`, `_late`,
+  `_discarded`, `_dropped`, `_capacity_failures`, `_pending`, and
+  `_max_lateness_frames`. In a quiescent snapshot,
+  `accepted == executed + discarded + dropped + pending`.
+- Internal: `EventScheduler` (fixed-capacity min-heap owned by the audio
+  thread, ordered by frame then admission sequence), `EventReservations`
+  (control-side atomic reservation, so capacity failures are reported
+  synchronously and the heap cannot overflow), `GainRamp`, and a session epoch
+  that lets the audio thread discard stale events after `Shutdown()`.
+- Tests:
+  - Unit: frame types, scheduler, reservations, ramps, event timing across
+    segment boundaries, and every schedulable operation checked bit-for-bit
+    against an immediate-replay oracle.
+  - Real-time safety: the scheduled and ramp paths under `AllocationGuard`
+    (full heap, mixed bursts, node events across a plan swap, Shutdown discard).
+  - Concurrency: racing producers, exact capacity exhaustion, Stop/Start while
+    scheduling, Shutdown/restart discard and capacity return, and a recorded
+    output check that a scheduled start lands on exactly the expected sample.
+  - Hardware-gated: scheduled events through real device callbacks, and
+    Stop/Start/Shutdown/restart behavior.
+  - Test support: `RenderLoop` and `hardware_gate.h`
+    (`test_support::HardwareTestsRequested()`), shared by every hardware-gated
+    integration test.
+- `examples/scheduling`: a phrase of eight notes, each a scheduled pitch change
+  with an attack and decay ramp, under a bus swell, with a deliberately
+  past-dated event to show the late counter.
+- `docs/architecture/scheduling_and_timeline.md`.
+
+#### Changed
+
+- Render order within a callback: commands are drained at the callback start
+  (immediates applied, scheduled items admitted), then the block is rendered in
+  segments with due events applied at segment boundaries.
+- `Command` gained a `duration_frames` field, after `asset_id`; designated
+  initializers must follow that order.
+- `FakeAudioDevice` tracks its running flag with an atomic, so tests can
+  Stop/Start from the control thread while a render thread pumps.
+- Hardware-gated integration tests share `hardware_gate.h` instead of each
+  carrying a private copy of the environment check.
+- The TSan instructions in the README use the `LAVANDA_ENABLE_TSAN` option.
+
+#### Verified
+
+- Debug (ASan + UBSan) and Release builds; the full test suite with
+  `LAVANDA_RUN_HARDWARE_TESTS=1` against real Core Audio output (macOS), in
+  both configurations, with no test skipped.
+- ThreadSanitizer on `lavanda_concurrency_tests` (macOS arm64,
+  RelWithDebInfo, `FakeAudioDevice` render thread): a full run, and the new
+  scheduling concurrency suite repeated 20 times, with no reports.
+- On real hardware, `Stop()` is synchronous: the clock is frozen when it
+  returns.
+
+#### Known issues and scope notes
+
+- The control-side API is single-producer: `ScheduleAtFrame()`, `Submit()` and
+  the `Voice`/`Bus`/`GraphNodeHandle` setters feed one SPSC queue. They may be
+  called from different threads over time but must be externally serialized.
+  `frame_position()`, `stats()` and `is_running()` are safe from any thread.
+- Scheduled events cannot be cancelled once accepted.
+- Ramps are linear and apply to voice and bus gain only. Node-parameter ramps
+  (including `GainNode`) are deferred. `kSetVoiceBus` is not schedulable.
+- Callbacks larger than `max_frames_per_block` are rendered as one segment, so
+  events inside them are applied at the next callback and counted late.
+- `DelayNode` (Phase 4): `delay == max` reads the sample just written, so the
+  effective maximum is `max - 1` frames. This applies to immediate and
+  scheduled changes alike and is left as is.
+- Three retry loops in the scheduling concurrency tests have no deadline;
+  a broken scheduler could hang them rather than fail them.
+- No Linux/GCC Release job exists in CI yet.
+- Phase 5 limitations carry over unchanged. See
+  `docs/architecture/scheduling_and_timeline.md` for the full list.
+
 ### Phase 5: Audio Resources, Assets, and Decoding
 
 #### Added
