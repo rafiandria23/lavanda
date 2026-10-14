@@ -73,6 +73,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Hardware-gated integration tests share `hardware_gate.h` instead of each
   carrying a private copy of the environment check.
 - The TSan instructions in the README use the `LAVANDA_ENABLE_TSAN` option.
+- CI: the Linux (GCC) job now configures, builds and tests both Debug and
+  Release, prints the compiler version, and runs `ctest --output-on-failure`
+  (the macOS job gained `--output-on-failure` too). Previously Linux built
+  Debug only.
+- `AudioGraph::Connect()` (Phase 4) tests the node pointers for null directly
+  instead of going through `IsValidNode()`. Behavior, error codes and messages
+  are unchanged; this silences a GCC `-Wnull-dereference` false positive that
+  fires only at `-O3` (Release, `-Werror`).
+- A Phase 6 unit test renamed a file-name constant that shared its name with an
+  enumerator of a scoped enum, which GCC's `-Wshadow` rejects. Test-only.
 
 #### Verified
 
@@ -84,6 +94,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   scheduling concurrency suite repeated 20 times, with no reports.
 - On real hardware, `Stop()` is synchronous: the clock is frozen when it
   returns.
+- `examples/scheduling` on real Core Audio output: all 28 scheduled events
+  executed, the one deliberately past-dated event counted as late
+  (`max_lateness=1`), nothing discarded or dropped, `pending=0`, no missed
+  deadlines, clean shutdown.
 
 #### Known issues and scope notes
 
@@ -101,7 +115,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   scheduled changes alike and is left as is.
 - Three retry loops in the scheduling concurrency tests have no deadline;
   a broken scheduler could hang them rather than fail them.
-- No Linux/GCC Release job exists in CI yet.
 - Phase 5 limitations carry over unchanged. See
   `docs/architecture/scheduling_and_timeline.md` for the full list.
 

@@ -72,7 +72,10 @@ Status AudioGraph::RemoveNode(NodeId id) {
 
 Status AudioGraph::Connect(NodeId source, NodeId destination,
                            std::uint32_t destination_input_index) {
-  if (!IsValidNode(source) || !IsValidNode(destination)) {
+  AudioNode* source_node = GetNode(source);
+  AudioNode* destination_node = GetNode(destination);
+
+  if (source_node == nullptr || destination_node == nullptr) {
     return Status(ErrorCode::kInvalidArgument,
                   "source or destination node id is invalid");
   }
@@ -81,8 +84,6 @@ Status AudioGraph::Connect(NodeId source, NodeId destination,
     return Status(ErrorCode::kInvalidArgument,
                   "self-connections are not allowed");
   }
-
-  AudioNode* destination_node = GetNode(destination);
 
   if (destination_input_index >= destination_node->expected_input_count()) {
     return Status(
@@ -98,8 +99,6 @@ Status AudioGraph::Connect(NodeId source, NodeId destination,
                     "Disconnect it first");
     }
   }
-
-  AudioNode* source_node = GetNode(source);
 
   if (source_node->output_channel_count() !=
       destination_node->input_channel_count()) {

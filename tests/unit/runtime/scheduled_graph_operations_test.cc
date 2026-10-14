@@ -39,7 +39,7 @@ constexpr float kPlanBOscillatorGain = 1.0f;
 constexpr std::size_t kNoMismatch = std::numeric_limits<std::size_t>::max();
 constexpr std::uint32_t kCallbackSizes[] = {192, 64, 7};
 constexpr std::uint64_t kTargets[] = {0, 1, 17, 63, 64, 65, 128, 191, 192, 500};
-constexpr const char* kStereoAsset = "stereo_pcm16.wav";
+constexpr const char* kStereoAssetFile = "stereo_pcm16.wav";
 constexpr float kNaN = std::numeric_limits<float>::quiet_NaN();
 constexpr float kInf = std::numeric_limits<float>::infinity();
 
@@ -177,7 +177,7 @@ class GraphSession {
 
   void BuildStereoAsset() {
     StatusOr<AudioAssetId> asset = runtime_->LoadAudioAsset(
-        std::string(LAVANDA_FIXTURE_DIR) + "/" + kStereoAsset);
+        std::string(LAVANDA_FIXTURE_DIR) + "/" + kStereoAssetFile);
 
     EXPECT_TRUE(asset.ok());
 
