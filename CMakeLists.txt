@@ -64,6 +64,7 @@ add_library(lavanda STATIC
   src/lavanda/graph/asset_pins.cc
   src/lavanda/graph/nodes/audio_asset_source_node.cc
   src/lavanda/runtime/event_scheduler.cc
+  src/lavanda/spatial/spatial_validation.cc
 )
 add_library(lavanda::lavanda ALIAS lavanda)
 

@@ -33,6 +33,10 @@
 #include "lavanda/runtime/mixing.h"
 #include "lavanda/runtime/runtime_config.h"
 #include "lavanda/runtime/runtime_stats.h"
+#include "lavanda/spatial/quaternion.h"
+#include "lavanda/spatial/spatial_config.h"
+#include "lavanda/spatial/spatial_state.h"
+#include "lavanda/spatial/vec3.h"
 
 namespace lavanda {
 
