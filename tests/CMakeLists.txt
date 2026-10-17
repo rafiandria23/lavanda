@@ -89,6 +89,7 @@ add_executable(lavanda_unit_tests
   unit/spatial/vec3_test.cc
   unit/spatial/quaternion_test.cc
   unit/spatial/spatial_validation_test.cc
+  unit/spatial/spatial_math_test.cc
 )
 target_link_libraries(lavanda_unit_tests PRIVATE
   lavanda::lavanda
