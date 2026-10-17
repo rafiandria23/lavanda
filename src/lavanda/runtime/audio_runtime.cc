@@ -31,6 +31,7 @@
 #include "lavanda/runtime/render_state.h"
 #include "lavanda/runtime/stereo_balance.h"
 #include "lavanda/runtime/voice_pool.h"
+#include "lavanda/spatial/spatial_state.h"
 
 namespace lavanda {
 
@@ -88,6 +89,8 @@ Status ValidateScheduledCommand(const Command& command) {
     case CommandType::kRampVoiceGain:
     case CommandType::kSetVoicePan:
     case CommandType::kSetVoiceFrequency:
+    case CommandType::kSetVoiceEmitterState:
+    case CommandType::kSetVoiceSpatialization:
       if (!command.voice_id.is_valid()) {
         return InvalidScheduledCommand(
             "scheduled voice command needs a valid VoiceId");
@@ -109,6 +112,8 @@ Status ValidateScheduledCommand(const Command& command) {
         return InvalidScheduledCommand(
             "scheduled node command needs a valid NodeId");
       }
+      break;
+    case CommandType::kSetListenerState:
       break;
     default:
       return InvalidScheduledCommand("this command type cannot be scheduled");
@@ -141,6 +146,31 @@ Status ValidateScheduledCommand(const Command& command) {
     case CommandType::kSetNodeDelayFrames:
       if (!std::isfinite(value) || value < 0.0f) {
         return InvalidScheduledCommand("delay must be finite and non-negative");
+      }
+      break;
+    case CommandType::kSetListenerState: {
+      Status listener = ValidateListenerState(command.spatial);
+
+      if (!listener.ok()) {
+        return listener;
+      }
+
+      break;
+    }
+    case CommandType::kSetVoiceEmitterState: {
+      Status emitter = ValidateEmitterState(
+          EmitterState{command.spatial.position, command.spatial.velocity});
+
+      if (!emitter.ok()) {
+        return emitter;
+      }
+
+      break;
+    }
+    case CommandType::kSetVoiceSpatialization:
+      if (value != 0.0f && value != 1.0f) {
+        return InvalidScheduledCommand(
+            "spatialization flag must be exactly 0 or 1");
       }
       break;
     default:

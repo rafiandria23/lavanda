@@ -7,6 +7,7 @@
 #include "lavanda/graph/node_id.h"
 #include "lavanda/resources/audio_asset_id.h"
 #include "lavanda/runtime/handles.h"
+#include "lavanda/spatial/spatial_state.h"
 
 namespace lavanda {
 
@@ -38,6 +39,10 @@ enum class CommandType : std::uint8_t {
 
   kRampVoiceGain,
   kRampBusGain,
+
+  kSetListenerState,
+  kSetVoiceEmitterState,
+  kSetVoiceSpatialization,
 };
 
 struct Command {
@@ -49,6 +54,7 @@ struct Command {
   GraphPlanHandle plan_handle;
   AudioAssetId asset_id;
   std::uint32_t duration_frames = 0;
+  ListenerState spatial;
 };
 
 }  // namespace lavanda
