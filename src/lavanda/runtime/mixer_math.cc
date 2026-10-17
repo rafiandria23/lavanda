@@ -53,6 +53,39 @@ void AccumulateMonoToStereoRamped(AudioBufferView destination,
   }
 }
 
+void AccumulateMonoToStereoSpatial(AudioBufferView destination,
+                                   AudioBufferView source,
+                                   const GainRamp& left_gain,
+                                   const GainRamp& right_gain,
+                                   const GainRamp& voice_gain,
+                                   std::uint64_t first_frame) noexcept {
+  if (destination.empty() || source.empty()) {
+    return;
+  }
+
+  if (left_gain.IsConstantFrom(first_frame) &&
+      right_gain.IsConstantFrom(first_frame) &&
+      voice_gain.IsConstantFrom(first_frame)) {
+    const float voice = voice_gain.target();
+
+    AccumulateMonoToStereo(
+        destination, source,
+        StereoGains{left_gain.target() * voice, right_gain.target() * voice});
+    return;
+  }
+
+  const std::uint32_t frame_count = destination.frame_count();
+
+  for (std::uint32_t frame = 0; frame < frame_count; ++frame) {
+    const std::uint64_t position = first_frame + frame;
+    const float voice = voice_gain.ValueAt(position);
+    const float sample = source(frame, 0);
+
+    destination(frame, 0) += sample * (left_gain.ValueAt(position) * voice);
+    destination(frame, 1) += sample * (right_gain.ValueAt(position) * voice);
+  }
+}
+
 void AccumulateInto(AudioBufferView destination, AudioBufferView source,
                     float gain) noexcept {
   if (destination.empty() || source.empty()) {

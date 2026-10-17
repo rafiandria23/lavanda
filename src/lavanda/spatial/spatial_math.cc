@@ -58,6 +58,21 @@ float DopplerRatio(const SpatialGeometry& geometry,
   return std::clamp(ratio, kMinDopplerRatio, kMaxDopplerRatio);
 }
 
+std::uint32_t SmoothingFrames(const SpatialConfig& config,
+                              double sample_rate_hz) noexcept {
+  const double frames =
+      static_cast<double>(config.smoothing_seconds) * sample_rate_hz;
+
+  if (!(frames > 0.0) || !std::isfinite(frames)) {
+    return 0;
+  }
+
+  constexpr long long kMaxFrames = std::numeric_limits<std::uint32_t>::max();
+
+  return static_cast<std::uint32_t>(
+      std::clamp<long long>(std::llround(frames), 0, kMaxFrames));
+}
+
 SpatialTarget ComputeSpatialTarget(const ListenerState& listener,
                                    const EmitterState& emitter,
                                    const SpatialConfig& config) noexcept {

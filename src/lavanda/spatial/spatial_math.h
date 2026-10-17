@@ -1,6 +1,8 @@
 #ifndef LAVANDA_SPATIAL_SPATIAL_MATH_H_
 #define LAVANDA_SPATIAL_SPATIAL_MATH_H_
 
+#include <cstdint>
+
 #include "lavanda/runtime/mixer_math.h"
 #include "lavanda/spatial/spatial_config.h"
 #include "lavanda/spatial/spatial_state.h"
@@ -34,6 +36,9 @@ float DistanceAttenuation(float distance, const SpatialConfig& config) noexcept;
 float DopplerRatio(const SpatialGeometry& geometry,
                    const ListenerState& listener, const EmitterState& emitter,
                    const SpatialConfig& config) noexcept;
+
+std::uint32_t SmoothingFrames(const SpatialConfig& config,
+                              double sample_rate_hz) noexcept;
 
 SpatialTarget ComputeSpatialTarget(const ListenerState& listener,
                                    const EmitterState& emitter,

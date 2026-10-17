@@ -66,6 +66,7 @@ add_library(lavanda STATIC
   src/lavanda/runtime/event_scheduler.cc
   src/lavanda/spatial/spatial_validation.cc
   src/lavanda/spatial/spatial_math.cc
+  src/lavanda/spatial/spatial_oscillator.cc
 )
 add_library(lavanda::lavanda ALIAS lavanda)
 

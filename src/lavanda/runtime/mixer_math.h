@@ -21,6 +21,12 @@ void AccumulateMonoToStereoRamped(AudioBufferView destination,
                                   AudioBufferView source,
                                   StereoGains unit_gains, const GainRamp& ramp,
                                   std::uint64_t first_frame) noexcept;
+void AccumulateMonoToStereoSpatial(AudioBufferView destination,
+                                   AudioBufferView source,
+                                   const GainRamp& left_gain,
+                                   const GainRamp& right_gain,
+                                   const GainRamp& voice_gain,
+                                   std::uint64_t first_frame) noexcept;
 
 void AccumulateInto(AudioBufferView destination, AudioBufferView source,
                     float gain) noexcept;
