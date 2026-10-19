@@ -94,6 +94,7 @@ add_executable(lavanda_unit_tests
   unit/spatial/spatial_mixing_test.cc
   unit/spatial/spatial_smoothing_test.cc
   unit/spatial/spatial_oscillator_test.cc
+  unit/spatial/spatial_api_test.cc
 )
 target_link_libraries(lavanda_unit_tests PRIVATE
   lavanda::lavanda

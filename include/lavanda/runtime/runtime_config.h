@@ -5,6 +5,7 @@
 
 #include "lavanda/graph/graph_config.h"
 #include "lavanda/resources/resource_config.h"
+#include "lavanda/spatial/spatial_config.h"
 
 namespace lavanda {
 
@@ -24,6 +25,7 @@ struct RuntimeConfig {
   std::size_t max_scheduled_events = 256;
 
   ResourceConfig resource_config;
+  SpatialConfig spatial;
 };
 
 }  // namespace lavanda

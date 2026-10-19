@@ -31,6 +31,7 @@
 #include "lavanda/runtime/render_state.h"
 #include "lavanda/runtime/stereo_balance.h"
 #include "lavanda/runtime/voice_pool.h"
+#include "lavanda/spatial/spatial_config.h"
 #include "lavanda/spatial/spatial_state.h"
 
 namespace lavanda {
@@ -200,12 +201,19 @@ class AudioRuntime::Impl {
         graph_(config.graph_config),
         graph_plan_store_(config.max_graph_plans),
         max_frames_per_block_(
-            static_cast<std::uint32_t>(config.max_frames_per_block)) {}
+            static_cast<std::uint32_t>(config.max_frames_per_block)),
+        spatial_config_(config.spatial) {}
 
   Status Start(const DeviceConfig& config) {
     if (!device_) {
       return Status(ErrorCode::kDeviceUnavailable,
                     "AudioRuntime was constructed with a null device");
+    }
+
+    Status spatial_valid = ValidateSpatialConfig(spatial_config_);
+
+    if (!spatial_valid.ok()) {
+      return spatial_valid;
     }
 
     if (device_->is_running()) {
@@ -287,6 +295,15 @@ class AudioRuntime::Impl {
       return valid;
     }
 
+    if (command.type == CommandType::kSetVoiceSpatialization &&
+        command.value == 1.0f) {
+      Status spatializable = ValidateSpatializable(command.voice_id);
+
+      if (!spatializable.ok()) {
+        return spatializable;
+      }
+    }
+
     if (!event_reservations_.TryReserve()) {
       diagnostics_.RecordScheduledEventCapacityFailure();
 
@@ -328,8 +345,30 @@ class AudioRuntime::Impl {
 
   StatusOr<VoiceId> ReserveVoice() { return voice_pool_.ReserveSlot(); }
   void ReleaseVoice(VoiceId id) noexcept { voice_pool_.ReleaseSlot(id); }
+
+  void RecordVoiceChannels(VoiceId id, std::uint32_t channels) noexcept {
+    voice_pool_.RecordSourceChannels(id, channels);
+  }
+
+  Status ValidateSpatializable(VoiceId id) const {
+    const std::uint32_t channels = voice_pool_.reserved_source_channels(id);
+
+    if (channels == 0) {
+      return Status(ErrorCode::kInvalidArgument,
+                    "voice does not exist (destroyed or stale handle)");
+    }
+
+    if (channels != 1) {
+      return Status(ErrorCode::kInvalidArgument,
+                    "only mono voices can be spatialized");
+    }
+
+    return Status::Ok();
+  }
+
   StatusOr<BusId> ReserveBus() { return bus_system_.ReserveSlot(); }
   void ReleaseBus(BusId id) noexcept { bus_system_.ReleaseSlot(id); }
+
   void RecordVoiceCreationFailure() noexcept {
     diagnostics_.RecordVoiceCreationFailure();
   }
@@ -738,6 +777,7 @@ class AudioRuntime::Impl {
 
   GraphPlanStore graph_plan_store_;
   std::uint32_t max_frames_per_block_;
+  SpatialConfig spatial_config_;
   std::atomic<bool> is_active_{false};
 
   std::atomic<std::uint32_t> session_epoch_{0};
@@ -757,16 +797,40 @@ AudioRuntime::~AudioRuntime() {
 Status AudioRuntime::Start(const DeviceConfig& config) {
   return impl_->Start(config);
 }
+
 Status AudioRuntime::Stop() { return impl_->Stop(); }
+
 Status AudioRuntime::Shutdown() { return impl_->Shutdown(); }
+
 Status AudioRuntime::Submit(const Command& command) {
   return impl_->Submit(command);
 }
+
 Status AudioRuntime::ScheduleAtFrame(const Command& command,
                                      FramePosition target_frame) {
   return impl_->ScheduleAtFrame(command, target_frame);
 }
+
+Status AudioRuntime::SetListenerState(const ListenerState& state) {
+  Status valid = ValidateListenerState(state);
+
+  if (!valid.ok()) {
+    return valid;
+  }
+
+  ListenerState normalized = state;
+  normalized.orientation = Normalized(state.orientation);
+
+  return Submit(
+      {.type = CommandType::kSetListenerState, .spatial = normalized});
+}
+
+Status AudioRuntime::ValidateVoiceSpatializable(VoiceId id) const {
+  return impl_->ValidateSpatializable(id);
+}
+
 bool AudioRuntime::is_running() const noexcept { return impl_->is_running(); }
+
 RuntimeStats AudioRuntime::stats() const noexcept { return impl_->stats(); }
 
 FramePosition AudioRuntime::frame_position() const noexcept {
@@ -819,6 +883,18 @@ StatusOr<Voice> AudioRuntime::CreateVoice(AudioAssetId asset) {
     return Status(ErrorCode::kInvalidArgument,
                   "audio asset is not available (stale or released)");
   }
+
+  StatusOr<AudioAssetInfo> info = impl_->GetAudioAssetInfo(asset);
+
+  if (!info.ok()) {
+    impl_->UnpinAsset(asset);
+    impl_->ReleaseVoice(id);
+    impl_->RecordVoiceCreationFailure();
+
+    return info.status();
+  }
+
+  impl_->RecordVoiceChannels(id, info.value().channel_count);
 
   Status submit_status = Submit(
       {.type = CommandType::kCreateVoice, .voice_id = id, .asset_id = asset});

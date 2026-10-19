@@ -20,6 +20,7 @@ StatusOr<VoiceId> VoicePool::ReserveSlot() {
     if (!control_slots_[i].in_use) {
       control_slots_[i].in_use = true;
       control_slots_[i].next_generation += 1;
+      control_slots_[i].source_channels = 1;
 
       VoiceId id;
 
@@ -45,6 +46,35 @@ void VoicePool::ReleaseSlot(VoiceId id) noexcept {
   }
 
   slot.in_use = false;
+}
+
+void VoicePool::RecordSourceChannels(VoiceId id,
+                                     std::uint32_t channels) noexcept {
+  if (id.index >= control_slots_.size()) {
+    return;
+  }
+
+  ControlSlot& slot = control_slots_[id.index];
+
+  if (!slot.in_use || slot.next_generation != id.generation) {
+    return;
+  }
+
+  slot.source_channels = channels;
+}
+
+std::uint32_t VoicePool::reserved_source_channels(VoiceId id) const noexcept {
+  if (id.index >= control_slots_.size()) {
+    return 0;
+  }
+
+  const ControlSlot& slot = control_slots_[id.index];
+
+  if (!slot.in_use || slot.next_generation != id.generation) {
+    return 0;
+  }
+
+  return slot.source_channels;
 }
 
 bool VoicePool::IsValidTarget(VoiceId id) const noexcept {

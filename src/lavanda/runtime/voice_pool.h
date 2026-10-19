@@ -38,6 +38,10 @@ class VoicePool {
 
   void ReleaseSlot(VoiceId id) noexcept;
 
+  void RecordSourceChannels(VoiceId id, std::uint32_t channels) noexcept;
+
+  std::uint32_t reserved_source_channels(VoiceId id) const noexcept;
+
   void ApplyCommand(const Command& command, std::uint64_t frame = 0) noexcept;
 
   bool is_active(std::size_t index) const noexcept;
@@ -57,6 +61,7 @@ class VoicePool {
   struct ControlSlot {
     bool in_use = false;
     std::uint32_t next_generation = 0;
+    std::uint32_t source_channels = 1;
   };
 
   struct AudioSlot {

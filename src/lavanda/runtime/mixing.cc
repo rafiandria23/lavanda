@@ -114,6 +114,41 @@ Status Voice::SetBus(BusId bus_id) {
 
 Status Voice::SetBus(const Bus& bus) { return SetBus(bus.id()); }
 
+Status Voice::SetEmitterState(const EmitterState& state) {
+  if (!is_valid()) {
+    return Status(ErrorCode::kInvalidArgument, "Voice is not valid");
+  }
+
+  Status valid = ValidateEmitterState(state);
+
+  if (!valid.ok()) {
+    return valid;
+  }
+
+  return runtime_->Submit(
+      {.type = CommandType::kSetVoiceEmitterState,
+       .voice_id = id_,
+       .spatial = ListenerState{state.position, Quaternion{}, state.velocity}});
+}
+
+Status Voice::SetSpatialized(bool spatialized) {
+  if (!is_valid()) {
+    return Status(ErrorCode::kInvalidArgument, "Voice is not valid");
+  }
+
+  if (spatialized) {
+    Status spatializable = runtime_->ValidateVoiceSpatializable(id_);
+
+    if (!spatializable.ok()) {
+      return spatializable;
+    }
+  }
+
+  return runtime_->Submit({.type = CommandType::kSetVoiceSpatialization,
+                           .value = spatialized ? 1.0f : 0.0f,
+                           .voice_id = id_});
+}
+
 Status Bus::Destroy() {
   if (!is_valid()) {
     return Status(ErrorCode::kInvalidArgument, "Bus is not valid");

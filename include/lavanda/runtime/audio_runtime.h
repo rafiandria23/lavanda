@@ -17,6 +17,7 @@
 #include "lavanda/runtime/mixing.h"
 #include "lavanda/runtime/runtime_config.h"
 #include "lavanda/runtime/runtime_stats.h"
+#include "lavanda/spatial/spatial_state.h"
 
 namespace lavanda {
 
@@ -38,9 +39,10 @@ class AudioRuntime {
 
   Status Submit(const Command& command);
   Status ScheduleAtFrame(const Command& command, FramePosition target_frame);
+  Status SetListenerState(const ListenerState& state);
+
   bool is_running() const noexcept;
   RuntimeStats stats() const noexcept;
-
   FramePosition frame_position() const noexcept;
 
   StatusOr<Voice> CreateVoice();
@@ -76,7 +78,10 @@ class AudioRuntime {
 
   void ReleaseVoiceReservation(VoiceId id) noexcept;
   void ReleaseBusReservation(BusId id) noexcept;
+
   bool IsVoicePlaying(VoiceId id) const noexcept;
+
+  Status ValidateVoiceSpatializable(VoiceId id) const;
 
   class Impl;
   std::unique_ptr<Impl> impl_;

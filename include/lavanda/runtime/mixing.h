@@ -5,6 +5,7 @@
 
 #include "lavanda/core/status.h"
 #include "lavanda/runtime/handles.h"
+#include "lavanda/spatial/spatial_state.h"
 
 namespace lavanda {
 
@@ -36,6 +37,9 @@ class Voice {
 
   Status SetBus(BusId bus_id);
   Status SetBus(const Bus& bus);
+
+  Status SetEmitterState(const EmitterState& state);
+  Status SetSpatialized(bool spatialized);
 
  private:
   friend class AudioRuntime;
