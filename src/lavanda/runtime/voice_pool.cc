@@ -4,10 +4,22 @@
 #include <cmath>
 #include <numbers>
 
+#include "lavanda/core/sample.h"
 #include "lavanda/resources/audio_asset.h"
 #include "lavanda/resources/resource_store.h"
+#include "lavanda/runtime/mixer_math.h"
+#include "lavanda/spatial/spatial_math.h"
+#include "lavanda/spatial/spatial_oscillator.h"
 
 namespace lavanda {
+
+namespace {
+
+std::uint32_t SourceChannelsOf(const AudioAsset* asset) noexcept {
+  return asset != nullptr ? asset->channel_count() : 1;
+}
+
+}  // namespace
 
 VoicePool::VoicePool(std::size_t capacity, ResourceStore* resource_store)
     : control_slots_(std::max<std::size_t>(capacity, 1)),
@@ -23,7 +35,6 @@ StatusOr<VoiceId> VoicePool::ReserveSlot() {
       control_slots_[i].source_channels = 1;
 
       VoiceId id;
-
       id.index = static_cast<std::uint32_t>(i);
       id.generation = control_slots_[i].next_generation;
 
@@ -122,6 +133,7 @@ void VoicePool::ReleaseAsset(AudioSlot& slot) noexcept {
   slot.asset_id = AudioAssetId{};
   slot.asset = nullptr;
   slot.position_frames = 0;
+  slot.cursor_frames = 0.0;
 }
 
 void VoicePool::ApplyCommand(const Command& command,
@@ -164,6 +176,10 @@ void VoicePool::ApplyCommand(const Command& command,
         return;
       }
 
+      if (slot.state != VoiceState::kPlaying) {
+        slot.snap_spatial = true;
+      }
+
       slot.state = VoiceState::kPlaying;
 
       Publish(command.voice_id.index);
@@ -179,6 +195,7 @@ void VoicePool::ApplyCommand(const Command& command,
 
       slot.state = VoiceState::kStopped;
       slot.position_frames = 0;
+      slot.cursor_frames = 0.0;
 
       Publish(command.voice_id.index);
 
@@ -242,6 +259,62 @@ void VoicePool::ApplyCommand(const Command& command,
       }
 
       audio_slots_[command.voice_id.index].target_bus = command.bus_id;
+
+      break;
+    }
+    case CommandType::kSetVoiceEmitterState: {
+      if (!IsValidTarget(command.voice_id)) {
+        return;
+      }
+
+      audio_slots_[command.voice_id.index].emitter =
+          EmitterState{command.spatial.position, command.spatial.velocity};
+
+      break;
+    }
+    case CommandType::kSetVoiceSpatialization: {
+      if (!IsValidTarget(command.voice_id)) {
+        return;
+      }
+
+      AudioSlot& slot = audio_slots_[command.voice_id.index];
+      const bool enable = command.value == 1.0f;
+
+      if (enable == slot.spatialized) {
+        break;
+      }
+
+      if (!enable) {
+        if (slot.asset_backed && slot.asset != nullptr) {
+          const double limit = static_cast<double>(slot.asset->frame_count());
+
+          slot.position_frames = static_cast<std::uint32_t>(
+              std::clamp(std::floor(slot.cursor_frames), 0.0, limit));
+        }
+
+        slot.spatialized = false;
+
+        break;
+      }
+
+      if (SourceChannelsOf(slot.asset) != 1) {
+        break;
+      }
+
+      slot.cursor_frames = static_cast<double>(slot.position_frames);
+
+      if (slot.state == VoiceState::kPlaying) {
+        const StereoGains manual = EqualPowerPan(slot.pan, 1.0f);
+
+        slot.spatial_left.Set(manual.left);
+        slot.spatial_right.Set(manual.right);
+        slot.spatial_ratio.Set(1.0f);
+        slot.snap_spatial = false;
+      } else {
+        slot.snap_spatial = true;
+      }
+
+      slot.spatialized = true;
 
       break;
     }
@@ -372,6 +445,136 @@ void VoicePool::RenderVoiceSource(std::size_t index, AudioBufferView output,
     output(frame, 0) = static_cast<float>(std::sin(slot.phase));
     slot.phase += phase_increment;
   }
+}
+
+bool VoicePool::is_spatialized(std::size_t index) const noexcept {
+  return index < audio_slots_.size() && audio_slots_[index].spatialized;
+}
+
+void VoicePool::UpdateSpatial(std::size_t index, const ListenerState& listener,
+                              const SpatialConfig& config,
+                              std::uint32_t smoothing_frames,
+                              std::uint64_t now) noexcept {
+  if (index >= audio_slots_.size()) {
+    return;
+  }
+
+  AudioSlot& slot = audio_slots_[index];
+
+  if (!slot.spatialized) {
+    return;
+  }
+
+  const SpatialTarget target =
+      ComputeSpatialTarget(listener, slot.emitter, config);
+
+  if (slot.snap_spatial) {
+    slot.spatial_left.Set(target.gains.left);
+    slot.spatial_right.Set(target.gains.right);
+    slot.spatial_ratio.Set(target.playback_ratio);
+    slot.snap_spatial = false;
+
+    return;
+  }
+
+  if (target.gains.left == slot.spatial_left.target() &&
+      target.gains.right == slot.spatial_right.target() &&
+      target.playback_ratio == slot.spatial_ratio.target()) {
+    return;
+  }
+
+  slot.spatial_left.Start(now, target.gains.left, smoothing_frames);
+  slot.spatial_right.Start(now, target.gains.right, smoothing_frames);
+  slot.spatial_ratio.Start(now, target.playback_ratio, smoothing_frames);
+}
+
+GainRamp VoicePool::spatial_left_ramp(std::size_t index) const noexcept {
+  if (index >= audio_slots_.size()) {
+    return GainRamp(0.0f);
+  }
+
+  return audio_slots_[index].spatial_left;
+}
+
+GainRamp VoicePool::spatial_right_ramp(std::size_t index) const noexcept {
+  if (index >= audio_slots_.size()) {
+    return GainRamp(0.0f);
+  }
+
+  return audio_slots_[index].spatial_right;
+}
+
+void VoicePool::RenderAssetSourceSpatial(std::size_t index,
+                                         AudioBufferView output,
+                                         std::uint64_t first_frame) noexcept {
+  AudioSlot& slot = audio_slots_[index];
+  const AudioAsset* asset = slot.asset;
+
+  if (asset == nullptr || asset->channel_count() != 1 ||
+      output.channel_count() != 1) {
+    output.Clear();
+    return;
+  }
+
+  const std::uint32_t total_frames = asset->frame_count();
+  const std::uint32_t frame_count = output.frame_count();
+  const double end = static_cast<double>(total_frames);
+  double cursor = slot.cursor_frames;
+  std::uint32_t frame = 0;
+
+  for (; frame < frame_count && cursor < end; ++frame) {
+    const std::uint32_t whole = static_cast<std::uint32_t>(cursor);
+    const double fraction = cursor - static_cast<double>(whole);
+    const Sample current = asset->sample(whole, 0);
+    const Sample next =
+        whole + 1 < total_frames ? asset->sample(whole + 1, 0) : Sample{0};
+
+    output(frame, 0) =
+        current + (next - current) * static_cast<Sample>(fraction);
+
+    cursor +=
+        static_cast<double>(slot.spatial_ratio.ValueAt(first_frame + frame));
+  }
+
+  for (; frame < frame_count; ++frame) {
+    output(frame, 0) = 0.0f;
+  }
+
+  slot.cursor_frames = cursor;
+
+  if (cursor >= end) {
+    slot.cursor_frames = 0.0;
+    slot.position_frames = 0;
+    slot.state = VoiceState::kStopped;
+
+    Publish(index);
+  }
+}
+
+void VoicePool::RenderVoiceSourceSpatial(std::size_t index,
+                                         AudioBufferView output,
+                                         double sample_rate_hz,
+                                         std::uint64_t first_frame) noexcept {
+  if (index >= audio_slots_.size()) {
+    output.Clear();
+    return;
+  }
+
+  AudioSlot& slot = audio_slots_[index];
+
+  if (slot.state != VoiceState::kPlaying || !(sample_rate_hz > 0.0) ||
+      output.empty()) {
+    output.Clear();
+    return;
+  }
+
+  if (slot.asset_backed) {
+    RenderAssetSourceSpatial(index, output, first_frame);
+    return;
+  }
+
+  RenderDopplerSine(output, slot.phase, slot.frequency_hz, slot.spatial_ratio,
+                    first_frame, sample_rate_hz);
 }
 
 }  // namespace lavanda

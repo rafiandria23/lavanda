@@ -32,6 +32,7 @@
 #include "lavanda/runtime/stereo_balance.h"
 #include "lavanda/runtime/voice_pool.h"
 #include "lavanda/spatial/spatial_config.h"
+#include "lavanda/spatial/spatial_math.h"
 #include "lavanda/spatial/spatial_state.h"
 
 namespace lavanda {
@@ -592,6 +593,10 @@ class AudioRuntime::Impl {
   }
 
   void ApplyCommand(const Command& command, std::uint64_t frame) noexcept {
+    if (command.type == CommandType::kSetListenerState) {
+      listener_ = command.spatial;
+    }
+
     render_state_.ApplyCommand(command);
     voice_pool_.ApplyCommand(command, frame);
     bus_system_.ApplyCommand(command, frame);
@@ -656,6 +661,8 @@ class AudioRuntime::Impl {
     AudioBufferView mono_scratch = mix_scratch_.View(output.frame_count());
     AudioBufferView stereo_scratch = stereo_scratch_.View(output.frame_count());
     const double sample_rate_hz = device_->format().sample_rate_hz();
+    const std::uint32_t smoothing_frames =
+        SmoothingFrames(spatial_config_, sample_rate_hz);
     const std::size_t voice_count = voice_pool_.capacity();
     std::uint32_t active_voice_count = 0;
 
@@ -686,6 +693,15 @@ class AudioRuntime::Impl {
               bus_accumulator, stereo_scratch,
               StereoBalanceGains(voice_pool_.pan(i), 1.0f), gain, start_frame);
         }
+      } else if (voice_pool_.is_spatialized(i)) {
+        voice_pool_.UpdateSpatial(i, listener_, spatial_config_,
+                                  smoothing_frames, start_frame);
+        voice_pool_.RenderVoiceSourceSpatial(i, mono_scratch, sample_rate_hz,
+                                             start_frame);
+
+        AccumulateMonoToStereoSpatial(
+            bus_accumulator, mono_scratch, voice_pool_.spatial_left_ramp(i),
+            voice_pool_.spatial_right_ramp(i), gain, start_frame);
       } else {
         voice_pool_.RenderVoiceSource(i, mono_scratch, sample_rate_hz);
 
@@ -778,6 +794,7 @@ class AudioRuntime::Impl {
   GraphPlanStore graph_plan_store_;
   std::uint32_t max_frames_per_block_;
   SpatialConfig spatial_config_;
+  ListenerState listener_;
   std::atomic<bool> is_active_{false};
 
   std::atomic<std::uint32_t> session_epoch_{0};

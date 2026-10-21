@@ -12,6 +12,8 @@
 #include "lavanda/runtime/command.h"
 #include "lavanda/runtime/gain_ramp.h"
 #include "lavanda/runtime/handles.h"
+#include "lavanda/spatial/spatial_config.h"
+#include "lavanda/spatial/spatial_state.h"
 
 namespace lavanda {
 
@@ -52,6 +54,20 @@ class VoicePool {
 
   std::uint32_t source_channel_count(std::size_t index) const noexcept;
 
+  bool is_spatialized(std::size_t index) const noexcept;
+
+  void UpdateSpatial(std::size_t index, const ListenerState& listener,
+                     const SpatialConfig& config,
+                     std::uint32_t smoothing_frames,
+                     std::uint64_t now) noexcept;
+
+  GainRamp spatial_left_ramp(std::size_t index) const noexcept;
+  GainRamp spatial_right_ramp(std::size_t index) const noexcept;
+
+  void RenderVoiceSourceSpatial(std::size_t index, AudioBufferView output,
+                                double sample_rate_hz,
+                                std::uint64_t first_frame) noexcept;
+
   void RenderVoiceSource(std::size_t index, AudioBufferView output,
                          double sample_rate_hz) noexcept;
 
@@ -77,12 +93,22 @@ class VoicePool {
     AudioAssetId asset_id;
     const AudioAsset* asset = nullptr;
     std::uint32_t position_frames = 0;
+
+    bool spatialized = false;
+    bool snap_spatial = true;
+    EmitterState emitter;
+    GainRamp spatial_left;
+    GainRamp spatial_right;
+    GainRamp spatial_ratio;      // playback-rate multiplier; neutral is 1.0
+    double cursor_frames = 0.0;  // fractional asset cursor while spatialized
   };
 
   bool IsValidTarget(VoiceId id) const noexcept;
   void Publish(std::size_t index) noexcept;
   void ReleaseAsset(AudioSlot& slot) noexcept;
   void RenderAssetSource(std::size_t index, AudioBufferView output) noexcept;
+  void RenderAssetSourceSpatial(std::size_t index, AudioBufferView output,
+                                std::uint64_t first_frame) noexcept;
 
   std::vector<ControlSlot> control_slots_;  // control-thread only
   std::vector<AudioSlot> audio_slots_;      // audio-thread only
