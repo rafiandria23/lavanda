@@ -128,6 +128,7 @@ add_executable(lavanda_concurrency_tests
   concurrency/audio_runtime_graph_concurrency_test.cc
   concurrency/audio_runtime_asset_concurrency_test.cc
   concurrency/scheduled_events_concurrency_test.cc
+  concurrency/spatial_concurrency_test.cc
 )
 target_link_libraries(lavanda_concurrency_tests PRIVATE
   lavanda::lavanda
